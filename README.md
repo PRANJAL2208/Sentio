@@ -1,6 +1,8 @@
 # Sentio — an AI with EQ
 
 > An AI that reads how you feel.
+
+
 An AI that detects your cognitive load in real-time from typing behavior. It watches how you type, your pauses, your phrasing, your confusion signals and silently adapts every response to match your cognitive and emotional state in real time.
 
 Overwhelmed? It simplifies. Focused? It goes deep. Bored? It challenges you.
