@@ -1,5 +1,5 @@
 """
-app.py — CogniFlow
+app.py — Sentio
 
 Run with: streamlit run app.py
 """
@@ -10,7 +10,7 @@ import time
 
 import streamlit as st
 from dotenv import load_dotenv
-from openai import OpenAI as OpenAIClient
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from agent.graph import build_graph, run_agent
 from memory.store import (
@@ -21,7 +21,7 @@ from memory.store import (
     update_topic_on_review,
     get_forgotten_topics,
 )
-from ui.timing import inject_timing_tracker, get_pause_seconds, update_clarification_count
+from ui.timing import inject_timing_tracker, get_typing_telemetry, update_clarification_count
 
 load_dotenv()
 
@@ -29,12 +29,12 @@ load_dotenv()
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="CogniFlow",
+    page_title="Sentio",
     page_icon="🧠",
     layout="centered",
 )
 
-st.title("🧠 CogniFlow")
+st.title("🧠 Sentio")
 st.caption("An AI tutor that adapts to your cognitive state in real time.")
 
 
@@ -45,7 +45,7 @@ def init_session():
         "session_id":            str(uuid.uuid4()),
         "chat_history":          [],        # [{role, content}]
         "clarification_window":  [],        # last 3 turns, bool
-        "js_pause_seconds":      None,      # populated by JS component
+        "telemetry_input":       "",        # populated by JS telemetry collector
         "_last_interaction_time": time.time(),
         "load_state_history":    [],        # for the sidebar debug panel
     }
@@ -56,56 +56,150 @@ def init_session():
 init_session()
 
 
-# ── Inject JS timing tracker ──────────────────────────────────────────────────
+# ── Inject JS timing tracker & Telemetry Bridge ────────────────────────────────
+
+# Hidden text input to sync telemetry JSON from JS component
+st.text_input("telemetry_data", label_visibility="collapsed", key="telemetry_input")
+
+# Hide the telemetry text input via CSS
+st.markdown("""
+<style>
+div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
+    display: none;
+}
+</style>
+""", unsafe_allow_html=True)
+
 inject_timing_tracker()
 
 
-# ── Setup clients (cached so they don't rebuild on every rerun) ───────────────
-
-# @st.cache_resource
-# def get_agent():
-#     api_key = os.getenv("OPENAI_API_KEY", "")
-#     if not api_key:
-#         st.error("OPENAI_API_KEY not found. Add it to .env file.")
-#         st.stop()
-#     return build_graph(openai_api_key=api_key, model="gpt-4o-mini")
-
-
-# And update get_agent():
-@st.cache_resource
-def get_agent():
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        st.error("GEMINI_API_KEY not found. Add it to .env file.")
-        st.stop()
-    return build_graph(gemini_api_key=api_key)
+# ── Setup Memory (needs to be initialized early for sidebar rendering) ────────
 
 @st.cache_resource
 def get_memory(user_id: str = "default"):
     client = get_chroma_client()
     return get_or_create_collection(client, user_id=user_id)
 
-# @st.cache_resource
-# def get_openai_client():
-#     return OpenAIClient(api_key=os.getenv("OPENAI_API_KEY", ""))
+memory_collection = get_memory()
 
+
+# ── Model configuration utilities ─────────────────────────────────────────────
 
 @st.cache_resource
-def get_openai_client():
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0,
-    )
+def get_llm_instance(provider: str, model_name: str, api_key: str):
+    if provider == "Gemini (Google)":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=api_key,
+            temperature=0.7,
+        )
+    elif provider == "OpenAI":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.7,
+        )
+    elif provider == "Anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(
+            model=model_name,
+            anthropic_api_key=api_key,
+            temperature=0.7,
+        )
+    elif provider == "Groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.7,
+        )
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
 
-compiled_graph   = get_agent()
-memory_collection = get_memory()
-openai_client    = get_openai_client()
+@st.cache_resource
+def get_agent(_llm):
+    return build_graph(llm=_llm)
 
-# ── Sidebar: debug panel ──────────────────────────────────────────────────────
+@st.cache_resource
+def get_extractor_llm(provider: str, model_name: str, api_key: str):
+    if provider == "Gemini (Google)":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            google_api_key=api_key,
+            temperature=0.0,
+        )
+    elif provider == "OpenAI":
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.0,
+        )
+    elif provider == "Anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(
+            model=model_name,
+            anthropic_api_key=api_key,
+            temperature=0.0,
+        )
+    elif provider == "Groq":
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model=model_name,
+            api_key=api_key,
+            temperature=0.0,
+        )
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+
+# ── Sidebar: LLM Configuration & Monitor ─────────────────────────────────────
 
 with st.sidebar:
+    st.markdown("### ⚙️ LLM Settings")
+    provider = st.selectbox(
+        "Provider",
+        ["Gemini (Google)", "OpenAI", "Anthropic", "Groq"],
+        index=0,
+    )
+    
+    default_models = {
+        "Gemini (Google)": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+        "OpenAI": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
+        "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-haiku-20240307"],
+        "Groq": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+    }
+    
+    model_name = st.selectbox(
+        "Model",
+        default_models[provider],
+        index=0,
+    )
+    
+    custom_model = st.text_input("Custom model name (optional)")
+    if custom_model.strip():
+        model_name = custom_model.strip()
+        
+    api_key_input = st.text_input(
+        "API Key (Leave blank to use .env)",
+        type="password",
+    )
+
+    resolved_api_key = api_key_input.strip()
+    if not resolved_api_key:
+        env_keys = {
+            "Gemini (Google)": "GEMINI_API_KEY",
+            "OpenAI": "OPENAI_API_KEY",
+            "Anthropic": "ANTHROPIC_API_KEY",
+            "Groq": "GROQ_API_KEY",
+        }
+        resolved_api_key = os.getenv(env_keys[provider], "")
+
+    st.divider()
+
     st.markdown("### 🔬 Cognitive Load Monitor")
     st.caption("What the system detected for your last message.")
 
@@ -127,6 +221,12 @@ with st.sidebar:
             st.markdown(f"- Message length: `{signals['message_length']} chars`")
             st.markdown(f"- Clarification: `{signals['is_clarification']}`")
             st.markdown(f"- Recent clarifications: `{signals['recent_clarification_count']}`")
+            if signals.get("avg_flight_ms", 0.0) > 0:
+                st.markdown(f"- Avg Flight: `{signals['avg_flight_ms']:.0f}ms`")
+            if signals.get("avg_dwell_ms", 0.0) > 0:
+                st.markdown(f"- Avg Dwell: `{signals['avg_dwell_ms']:.0f}ms`")
+            if signals.get("backspace_count", 0) > 0:
+                st.markdown(f"- Backspaces: `{signals['backspace_count']}`")
 
     st.divider()
     st.markdown("### 🗃️ Memory")
@@ -141,7 +241,7 @@ with st.sidebar:
         st.caption("Nothing flagged for review yet.")
 
     st.divider()
-    st.markdown("### ⚙️ Settings")
+    st.markdown("### ⚙️ Session Settings")
     show_load_badge = st.toggle("Show load state in chat", value=True)
 
     if st.button("Clear session memory"):
@@ -149,6 +249,17 @@ with st.sidebar:
         st.session_state["clarification_window"] = []
         st.session_state["load_state_history"] = []
         st.rerun()
+
+
+# ── Validate credentials & compile agent ─────────────────────────────────────
+
+if not resolved_api_key:
+    st.error(f"API Key for {provider} not found. Please paste it in the sidebar or add it to your `.env` file.")
+    st.stop()
+
+llm = get_llm_instance(provider, model_name, resolved_api_key)
+compiled_graph = get_agent(llm)
+extractor_llm = get_extractor_llm(provider, model_name, resolved_api_key)
 
 
 # ── Render existing chat history ──────────────────────────────────────────────
@@ -165,8 +276,8 @@ for turn in st.session_state["chat_history"]:
 
 if user_input := st.chat_input("Ask me anything..."):
 
-    # 1. Get pause duration (JS primary, fallback secondary)
-    pause = get_pause_seconds(st.session_state)
+    # 1. Get typing telemetry (JS primary, fallback secondary)
+    telemetry = get_typing_telemetry(st.session_state)
 
     # 2. Count recent clarifications
     clarification_count = update_clarification_count(st.session_state, user_input)
@@ -181,10 +292,13 @@ if user_input := st.chat_input("Ask me anything..."):
             result = run_agent(
                 compiled_graph=compiled_graph,
                 user_message=user_input,
-                pause_seconds=pause,
+                pause_seconds=telemetry["pause_seconds"],
                 chat_history=st.session_state["chat_history"],
                 memory_collection=memory_collection,
                 recent_clarification_count=clarification_count,
+                avg_dwell_ms=telemetry["avg_dwell_ms"],
+                avg_flight_ms=telemetry["avg_flight_ms"],
+                backspace_count=telemetry["backspace_count"],
             )
 
         st.markdown(result["response"])
@@ -212,7 +326,7 @@ if user_input := st.chat_input("Ask me anything..."):
 
     # 6. Store topics in memory (background, non-blocking)
     try:
-        topics = extract_topics_from_response(openai_client, result["response"])
+        topics = extract_topics_from_response(extractor_llm, result["response"])
         for topic in topics:
             store_topic(
                 collection=memory_collection,
@@ -234,6 +348,6 @@ if user_input := st.chat_input("Ask me anything..."):
 if not st.session_state["chat_history"]:
     st.info(
         "👋 Start chatting about any topic you're learning. "
-        "CogniFlow will detect when you're overwhelmed or bored and adapt automatically. "
+        "Sentio will detect when you're overwhelmed or bored and adapt automatically. "
         "Watch the **Load Monitor** in the sidebar."
     )

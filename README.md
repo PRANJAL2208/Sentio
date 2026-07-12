@@ -31,7 +31,7 @@ Overwhelmed? It simplifies. Focused? It goes deep. Bored? It challenges you.
 ## Project Structure
 
 ```
-cogniflow/
+Sentio/
 ├── app.py                  # Streamlit entry point — run this
 ├── requirements.txt        # All dependencies
 ├── core/
@@ -59,11 +59,6 @@ OPENAI_API_KEY=your_key_here
 ```
 Or swap for Anthropic — see agent/graph.py comments.
 
-
-Run:
-```bash
-streamlit run app.py
-```
 
 ---
 

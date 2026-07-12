@@ -53,6 +53,9 @@ def classify_load(
     pause_seconds: float,
     message_text: str,
     recent_clarification_count: int = 0,
+    avg_dwell_ms: float = 0.0,
+    avg_flight_ms: float = 0.0,
+    backspace_count: int = 0,
 ) -> dict:
     """
     Classify cognitive load from behavioral signals.
@@ -61,6 +64,9 @@ def classify_load(
         pause_seconds: Time (seconds) between user focusing input and hitting send.
         message_text: The message the user just sent.
         recent_clarification_count: How many clarification messages in the last 3 turns.
+        avg_dwell_ms: Average time (ms) keys are held down.
+        avg_flight_ms: Average transition time (ms) between key release and key press.
+        backspace_count: Total number of deletions performed while typing.
 
     Returns:
         dict with keys:
@@ -76,6 +82,9 @@ def classify_load(
         "message_length": msg_len,
         "is_clarification": is_clar,
         "recent_clarification_count": recent_clarification_count,
+        "avg_dwell_ms": avg_dwell_ms,
+        "avg_flight_ms": avg_flight_ms,
+        "backspace_count": backspace_count,
     }
 
     # ── Score toward OVERLOADED ──────────────────────────────────────────────
@@ -86,7 +95,12 @@ def classify_load(
     elif pause_seconds > PAUSE_HIGH * 0.6:
         overload_score += 0.2
 
-    if msg_len < LENGTH_SHORT:
+    # Skip length penalty for menu-like choices or direct options
+    menu_keywords = ["everything", "all", "both", "setup", "how it's made", "how it works", "benefits", "how they work", "yes", "no"]
+    normalized_msg = message_text.lower().strip()
+    is_menu_choice = any(k in normalized_msg for k in menu_keywords) or len(normalized_msg) < 4
+
+    if msg_len < LENGTH_SHORT and not is_menu_choice:
         overload_score += 0.3
 
     if is_clar:
@@ -95,8 +109,32 @@ def classify_load(
     if recent_clarification_count >= 2:
         overload_score += 0.3
 
+    # Apply keystroke dynamics if telemetry is present
+    if avg_flight_ms > 350.0:
+        overload_score += 0.3
+    if avg_dwell_ms > 150.0:
+        overload_score += 0.2
+    if msg_len > 0 and backspace_count > 0:
+        backspace_rate = backspace_count / msg_len
+        if backspace_rate > 0.15:
+            overload_score += 0.3
+
     # ── Score toward UNDERLOADED ─────────────────────────────────────────────
     underload_score = 0.0
+
+    # ── Telemetry & Keyword Mitigations ──────────────────────────────────────
+    # If the user specifically asks for everything/all, prevent OVERLOADED state
+    if "everything" in normalized_msg or "explain all" in normalized_msg or normalized_msg == "all":
+        overload_score = 0.0
+        underload_score += 0.4  # boost toward enriched
+
+    # Confident typing offsets the reading pause penalty
+    if avg_flight_ms > 0.0:
+        if avg_flight_ms < 250.0:
+            overload_score -= 0.3
+        if backspace_count == 0:
+            overload_score -= 0.1
+        overload_score = max(0.0, overload_score)
 
     if pause_seconds < PAUSE_LOW:
         underload_score += 0.4
@@ -105,6 +143,12 @@ def classify_load(
         underload_score += 0.4
 
     if not is_clar and recent_clarification_count == 0:
+        underload_score += 0.2
+
+    # Apply keystroke dynamics if telemetry is present
+    if 0.0 < avg_flight_ms < 150.0:
+        underload_score += 0.3
+    if 0.0 < avg_dwell_ms < 80.0:
         underload_score += 0.2
 
     # ── Decision ─────────────────────────────────────────────────────────────
@@ -120,15 +164,15 @@ def classify_load(
 # These ARE the adaptation. Different state = different instructions to the LLM.
 
 SYSTEM_PROMPTS = {
-    "OVERLOADED": """You are a patient, clear AI tutor. The user is currently overwhelmed.
+    "OVERLOADED": """You are a patient, clear AI tutor. The user is currently overwhelmed or needs a highly readable, step-by-step conceptual breakdown.
 
 RULES YOU MUST FOLLOW:
-- Maximum 3 bullet points OR 2 short paragraphs. Never longer.
-- Use only simple, everyday words. No jargon.
-- End with exactly ONE clear next step or question.
-- If you need to explain a concept, use a real-world analogy first.
-- Never introduce more than one new idea at a time.
-- Tone: calm, slow, reassuring. Like explaining to a friend, not a student.
+- Do NOT arbitrarily restrict explanation length if the user asks for a detailed or elaborate explanation.
+- Break down complex topics into clear, progressive, easy-to-follow steps rather than condensed summaries.
+- Use only simple, everyday language. Strictly avoid unexplained technical jargon.
+- Use real-world analogies to ground complex ideas.
+- Provide a smooth, natural conversational flow. Avoid ending with short, repetitive "what next?" menus unless it's a simple feedback request.
+- Tone: warm, patient, encouraging, and clear.
 """,
 
     "OPTIMAL": """You are a knowledgeable AI tutor. The user is focused and following along well.

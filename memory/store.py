@@ -25,7 +25,7 @@ from chromadb.config import Settings
 
 # ── ChromaDB setup ────────────────────────────────────────────────────────────
 
-def get_chroma_client(persist_dir: str = "./cogniflow_memory") -> chromadb.ClientAPI:
+def get_chroma_client(persist_dir: str = "./sentio_memory") -> chromadb.ClientAPI:
     """Returns a persistent ChromaDB client."""
     return chromadb.PersistentClient(path=persist_dir)
 
@@ -194,22 +194,29 @@ Only return the JSON array, nothing else.
 """
 
 
-def extract_topics_from_response(llm_client, response_text: str) -> list[str]:
+def extract_topics_from_response(llm, response_text: str) -> list[str]:
     """
     Use a fast LLM call to extract topics from the assistant's response.
     These get stored in ChromaDB for the forgetting curve.
     """
+    from langchain_core.messages import SystemMessage, HumanMessage
     try:
-        result = llm_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": TOPIC_EXTRACTION_PROMPT},
-                {"role": "user", "content": response_text[:2000]},  # cap length
-            ],
-            max_tokens=200,
-            temperature=0,
-        )
-        raw = result.choices[0].message.content.strip()
+        messages = [
+            SystemMessage(content=TOPIC_EXTRACTION_PROMPT),
+            HumanMessage(content=response_text[:2000]),
+        ]
+        result = llm.invoke(messages)
+        raw = result.content.strip()
+
+        # Clean markdown code block wraps if LLM returns it wrapped in ```json
+        if raw.startswith("```"):
+            lines = raw.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].startswith("```"):
+                lines = lines[:-1]
+            raw = "\n".join(lines).strip()
+
         topics = json.loads(raw)
         return topics if isinstance(topics, list) else []
     except Exception:

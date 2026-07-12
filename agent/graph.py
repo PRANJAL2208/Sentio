@@ -13,7 +13,7 @@ The memory context (forgotten topics) is prepended at generation time.
 
 from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from core.load_detector import classify_load, get_system_prompt
@@ -28,6 +28,9 @@ class AgentState(TypedDict):
     user_message: str
     pause_seconds: float
     recent_clarification_count: int
+    avg_dwell_ms: float
+    avg_flight_ms: float
+    backspace_count: int
     chat_history: list[dict]       # [{"role": "user"|"assistant", "content": "..."}]
     memory_collection: object      # ChromaDB collection (passed in, not serialized)
 
@@ -51,6 +54,9 @@ def classify_load_node(state: AgentState) -> AgentState:
         pause_seconds=state["pause_seconds"],
         message_text=state["user_message"],
         recent_clarification_count=state["recent_clarification_count"],
+        avg_dwell_ms=state.get("avg_dwell_ms", 0.0),
+        avg_flight_ms=state.get("avg_flight_ms", 0.0),
+        backspace_count=state.get("backspace_count", 0),
     )
 
     system_prompt = get_system_prompt(result["state"])
@@ -86,7 +92,7 @@ def route_by_load(state: AgentState) -> Literal["generate_overloaded", "generate
 # The actual behavior difference comes entirely from the system_prompt in state,
 # which was set in classify_load_node.
 
-def _make_generate_node(llm: ChatOpenAI):
+def _make_generate_node(llm: BaseChatModel):
     """Returns a generation function that closes over the LLM client."""
 
     def generate(state: AgentState) -> AgentState:
@@ -122,20 +128,10 @@ def _make_generate_node(llm: ChatOpenAI):
 
 # ── Build the graph ───────────────────────────────────────────────────────────
 
-def build_graph(openai_api_key: str, model: str = "gpt-4o-mini") -> object:
+def build_graph(llm: BaseChatModel) -> object:
     """
     Assembles and compiles the LangGraph state machine.
-
-    Swap model="gpt-4o-mini" for:
-    - "gpt-4o" for better quality
-    - Claude: replace ChatOpenAI with ChatAnthropic from langchain_anthropic
     """
-    llm = ChatOpenAI(
-        model=model,
-        api_key=openai_api_key,
-        temperature=0.7,
-    )
-
     generate_node = _make_generate_node(llm)
 
     graph = StateGraph(AgentState)
@@ -177,6 +173,9 @@ def run_agent(
     chat_history: list[dict],
     memory_collection,
     recent_clarification_count: int = 0,
+    avg_dwell_ms: float = 0.0,
+    avg_flight_ms: float = 0.0,
+    backspace_count: int = 0,
 ) -> dict:
     """
     Single function to call from app.py.
@@ -191,6 +190,9 @@ def run_agent(
         "user_message": user_message,
         "pause_seconds": pause_seconds,
         "recent_clarification_count": recent_clarification_count,
+        "avg_dwell_ms": avg_dwell_ms,
+        "avg_flight_ms": avg_flight_ms,
+        "backspace_count": backspace_count,
         "chat_history": chat_history,
         "memory_collection": memory_collection,
         "load_state": "",

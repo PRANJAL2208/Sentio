@@ -12,7 +12,7 @@ import math
 import time
 
 print("=" * 60)
-print("CogniFlow — Component Tests")
+print("Sentio — Component Tests")
 print("=" * 60)
 
 passed = 0
@@ -44,6 +44,22 @@ test("Medium pause + clear question → OPTIMAL", r["state"] == "OPTIMAL", r)
 # Underloaded: fast response, long message, no confusion
 r = classify_load(pause_seconds=1.0, message_text="I understand gradient descent and backprop. What about second-order optimization methods like L-BFGS or natural gradient? I'm curious about the curvature landscape and how Hessian approximation helps.")
 test("Fast + long engaged message → UNDERLOADED", r["state"] == "UNDERLOADED", r)
+
+# Keystroke dynamics tests
+r = classify_load(pause_seconds=4.0, message_text="Standard question text.", avg_flight_ms=400.0)
+test("High transition latency (flight time) → OVERLOADED", r["state"] == "OVERLOADED", r)
+
+r = classify_load(pause_seconds=4.0, message_text="This is a sentence.", backspace_count=5)
+test("High backspace rate (>15%) → OVERLOADED", r["state"] == "OVERLOADED", r)
+
+r = classify_load(pause_seconds=3.0, message_text="Short text but typed fast.", avg_flight_ms=100.0, avg_dwell_ms=60.0)
+test("Fast flight and dwell times → UNDERLOADED", r["state"] == "UNDERLOADED", r)
+
+r = classify_load(pause_seconds=10.0, message_text="Short query.", avg_flight_ms=150.0, backspace_count=0)
+test("Confident telemetry offsets high reading pause → OPTIMAL", r["state"] == "OPTIMAL", r)
+
+r = classify_load(pause_seconds=12.0, message_text="everything", recent_clarification_count=1)
+test("Explicit 'everything' request overrides overload state", r["state"] != "OVERLOADED", r)
 
 # Clarification detection
 test("'what do you mean' → is_clarification", is_clarification("wait, what do you mean by that?"))
@@ -89,7 +105,7 @@ try:
     import chromadb
     from memory.store import get_chroma_client, get_or_create_collection, store_topic, get_forgotten_topics
 
-    client = get_chroma_client(persist_dir="/tmp/cogniflow_test_db")
+    client = get_chroma_client(persist_dir="/tmp/sentio_test_db")
     collection = get_or_create_collection(client, user_id="test_user")
     test("ChromaDB client created", client is not None)
 
