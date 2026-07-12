@@ -48,6 +48,8 @@ def init_session():
         "telemetry_input":       "",        # populated by JS telemetry collector
         "_last_interaction_time": time.time(),
         "load_state_history":    [],        # for the sidebar debug panel
+        "srs_quiz_active":       False,
+        "srs_topic_id":          "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -270,6 +272,9 @@ for turn in st.session_state["chat_history"]:
         if show_load_badge and turn["role"] == "assistant" and "load_state" in turn:
             badge = {"OVERLOADED": "🔴 simplified", "OPTIMAL": "🟢 normal", "UNDERLOADED": "🔵 enriched"}
             st.caption(badge.get(turn["load_state"], ""))
+        if turn["role"] == "assistant" and turn.get("srs_evaluation"):
+            grade_emojis = {"correct": "🎯 Correct!", "partial": "⚠️ Close!", "incorrect": "❌ Not quite."}
+            st.info(f"**Spaced Repetition Practice**: {grade_emojis.get(turn['srs_evaluation'], '')}")
 
 
 # ── Chat input ────────────────────────────────────────────────────────────────
@@ -299,6 +304,8 @@ if user_input := st.chat_input("Ask me anything..."):
                 avg_dwell_ms=telemetry["avg_dwell_ms"],
                 avg_flight_ms=telemetry["avg_flight_ms"],
                 backspace_count=telemetry["backspace_count"],
+                srs_quiz_active=st.session_state["srs_quiz_active"],
+                srs_topic_id=st.session_state["srs_topic_id"],
             )
 
         st.markdown(result["response"])
@@ -312,11 +319,15 @@ if user_input := st.chat_input("Ask me anything..."):
             st.caption(badge.get(result["load_state"], ""))
 
     # 5. Update session state
+    st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
+    st.session_state["srs_topic_id"] = result["srs_topic_id"]
+
     st.session_state["chat_history"].append({"role": "user", "content": user_input})
     st.session_state["chat_history"].append({
         "role":       "assistant",
         "content":    result["response"],
         "load_state": result["load_state"],
+        "srs_evaluation": result.get("srs_evaluation", ""),
     })
     st.session_state["load_state_history"].append({
         "state":      result["load_state"],
@@ -325,22 +336,23 @@ if user_input := st.chat_input("Ask me anything..."):
     })
 
     # 6. Store topics in memory (background, non-blocking)
-    try:
-        topics = extract_topics_from_response(extractor_llm, result["response"])
-        for topic in topics:
-            store_topic(
-                collection=memory_collection,
-                topic_summary=topic,
-                session_id=st.session_state["session_id"],
-            )
+    if not result.get("srs_evaluation") and not result.get("srs_quiz_active"):
+        try:
+            topics = extract_topics_from_response(extractor_llm, result["response"])
+            for topic in topics:
+                store_topic(
+                    collection=memory_collection,
+                    topic_summary=topic,
+                    session_id=st.session_state["session_id"],
+                )
 
-        # If any forgotten topics were resurfaced, update their stability
-        forgotten_now = get_forgotten_topics(memory_collection)
-        for item in forgotten_now:
-            update_topic_on_review(memory_collection, item["topic_id"])
+            # If any forgotten topics were resurfaced, update their stability
+            forgotten_now = get_forgotten_topics(memory_collection)
+            for item in forgotten_now:
+                update_topic_on_review(memory_collection, item["topic_id"])
 
-    except Exception:
-        pass  # memory is enhancement — never block the chat
+        except Exception:
+            pass  # memory is enhancement — never block the chat
 
 
 # ── First-time welcome message ────────────────────────────────────────────────

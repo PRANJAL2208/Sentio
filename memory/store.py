@@ -221,3 +221,71 @@ def extract_topics_from_response(llm, response_text: str) -> list[str]:
         return topics if isinstance(topics, list) else []
     except Exception:
         return []  # fail silently — memory is enhancement, not core path
+
+
+# ── Active SRS practice evaluations ──────────────────────────────────────────
+
+def evaluate_user_answer(llm, topic_summary: str, user_answer: str) -> str:
+    """
+    Evaluate the user's recall answer using the LLM.
+    Returns: "correct" | "partial" | "incorrect"
+    """
+    from langchain_core.messages import SystemMessage
+    prompt = """You are an objective grading assistant for a tutoring system.
+Your job is to evaluate if a user's answer shows they remember the core concept of a previously learned topic.
+
+Topic Summary: "{topic}"
+User's Answer: "{answer}"
+
+Evaluate the answer and output EXACTLY one word:
+- "correct" if the user correctly recalls the main idea or the essence of the concept.
+- "partial" if the user has some parts right but misses key details.
+- "incorrect" if the user is completely wrong, confused, or says they don't know/forgot.
+
+Do not output any punctuation, code blocks, or extra text. Output only one of: correct, partial, incorrect.
+"""
+    messages = [
+        SystemMessage(content=prompt.format(topic=topic_summary, answer=user_answer))
+    ]
+    try:
+        result = llm.invoke(messages)
+        grade = result.content.strip().lower()
+        for choice in ["incorrect", "partial", "correct"]:
+            if choice in grade:
+                return choice
+        return "incorrect"
+    except Exception:
+        return "incorrect"
+
+
+def update_topic_stability(collection, topic_id: str, grade: str) -> float:
+    """
+    Updates the topic's stability based on a retrieval practice grade.
+    Returns the new stability value.
+    """
+    result = collection.get(ids=[topic_id], include=["metadatas"])
+    if not result["ids"]:
+        return 1.0
+
+    meta = result["metadatas"][0]
+    current_stability = float(meta.get("stability", 1.0))
+    
+    if grade == "correct":
+        new_stability = current_stability * 2.0
+    elif grade == "partial":
+        new_stability = current_stability * 1.2
+    else:
+        new_stability = 1.0
+
+    new_review_count = int(meta.get("review_count", 0)) + 1
+
+    collection.update(
+        ids=[topic_id],
+        metadatas=[{
+            **meta,
+            "last_seen_at": time.time(),
+            "stability": new_stability,
+            "review_count": new_review_count,
+        }],
+    )
+    return new_stability

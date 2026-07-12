@@ -38,7 +38,7 @@ Sentio integrates three established psychological and computer science methodolo
 
 $$R = e^{-\frac{t}{S}}$$
 
-* **Sentio Application**: Every concept explained by the tutor is logged in ChromaDB. If the user's estimated retention ($R$) drops below a configured threshold ($70\%$), a memory re-grounding instruction is prepended to the system prompt, causing the LLM to seamlessly weave in a review of the forgotten topic.
+* **Sentio Application**: Every concept explained by the tutor is logged in ChromaDB. If the user's estimated retention ($R$) drops below a configured threshold ($70\%$), a memory recall prompt is generated.
 
 ### C. Keystroke Dynamics (KSD) & Affective Computing
 Instead of requiring invasive physiological sensors (like EEG or facial tracking cameras), typing dynamics are used as a non-intrusive window into human state. Key literature backing this includes:
@@ -62,44 +62,39 @@ The mathematical thresholds used in Sentio's load classifier are drawn directly 
 ### Phase 1: Rebranding & API Generalization (Completed)
 * **Rebranding**: Rebranded the codebase from **CogniFlow** to **Sentio** across print statements, document titles, database persist directories, and Javascript postMessage event names.
 * **OpenAI to Multi-Provider Migration**: 
-  * The codebase was in a broken state, half-migrated between OpenAI and Gemini.
   * Generalised [`agent/graph.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/agent/graph.py) and [`memory/store.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/memory/store.py) to accept a generic LangChain `BaseChatModel` object. Both response generation and topic extraction now run dynamically on the same model definition.
   * Added dynamic dropdown selectors in the Streamlit Sidebar of [`app.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/app.py) allowing users to select their model provider (**Gemini**, **OpenAI**, **Anthropic**, **Groq**), select default models, input custom model strings, and enter custom API keys.
 * **Groq Integration**: Integrated the user's custom Groq API key directly into the project's [`.env`](file:///c:/Users/DELL/Desktop/projects/cogniflow/.env) file under `GROQ_API_KEY`.
-* **Testing & Verification**: Verified that all **19 unit tests pass successfully** under UTF-8 console configurations. Run manual checks using an automated browser subagent to verify the Streamlit frontend compiles and operates without console errors.
+* **Testing & Verification**: Verified that all **19 unit tests pass successfully** under UTF-8 console configurations.
 
 ### Phase 2: Keystroke Telemetry & Usability Loop Mitigation (Completed)
 * **Keystroke Dynamics Logging**: 
   * Refactored [`ui/timing.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/ui/timing.py) to log keyboard event listeners (`keydown` and `keyup`).
   * Calculates key transition flight time (Average Flight), key hold duration (Average Dwell), and backspace deletion rates.
-  * *Project Benefit*: Replaced raw reading pause duration (which includes healthy reading time) with direct, objective motor signals that separate cognitive load from simple text intake.
 * **React input Serialization Bridge**:
-  * Implemented a hidden text widget and a Javascript prototype-descriptor value setter bypass.
-  * *Project Benefit*: Bypasses React's internal value state tracking to force instantaneous, silent synchronization of telemetry metrics from the browser sandbox to Streamlit when messages are sent.
+  * Implemented a hidden text widget and a Javascript prototype-descriptor value setter bypass in [`app.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/app.py) to bridge client telemetry into Streamlit.
 * **Usability Loop Mitigations**:
   * Refactored [`core/load_detector.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/core/load_detector.py) to skip message-length penalties for common one-word answers or menu options (e.g. `everything`, `yes`, `setup`).
   * Implemented telemetry offsets where confident typing rhythms directly mitigate reading-pause penalties.
   * Added explicit overrides where direct requests for comprehensive information (e.g. "everything") force-promote the conversation out of the `OVERLOADED` state.
-  * *Project Benefit*: Resolved the critical "Brevity Loop" UX bug. The agent no longer enters infinite loops of shortened explanations and choices when a user asks to learn "everything".
 * **Refined OVERLOADED System Prompt**:
   * Rewrote the system instructions to focus on simple vocabulary, conceptual scaffolding, real-world analogies, and natural conversational flow rather than arbitrary sentence-length limits.
-  * *Project Benefit*: Allows detailed, elaborate explanations to be delivered naturally when requested, ensuring simplicity of concepts is never conflated with lack of depth.
 * **Groq Model Correction**:
   * Replaced decommissioned Groq model `llama-3.3-70b-specdec` with the currently active `llama-3.3-70b-versatile`.
-  * *Project Benefit*: Restores API calling stability for users on free tiers.
 
----
-
-## 4. Development Roadmap
-
-We are tracking the following future modifications to be implemented and maintained in this chronicle:
-
-```
-[Phase 3: Active SRS Practice] ──> [Phase 4: Scaffolded Routing]
-```
-
-* **Phase 3: Active SRS Practice**
-  * Transition from passive memory grounding to active concept reviews. 
-  * Generate dynamic retrieval practice (e.g., small diagnostic quiz questions) when the user is in a focused optimal flow state.
-* **Phase 4: Scaffolded Routing**
-  * Expand LangGraph conditional nodes to support structurally different teaching modes: Socratic questioning for the advanced (Underloaded), Direct instruction for the Optimal, and Scaffolding/Worked Examples for the Overloaded.
+### Phase 3 & 4: Scaffolded Routing & Active SRS Practice (Completed)
+* **Closed-Loop Active Recall**:
+  * Implemented `evaluate_user_answer()` and `update_topic_stability()` in [`memory/store.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/memory/store.py) to grade active recall quiz answers using the LLM.
+  * Correct answers double memory stability (`x2.0`), partial responses increase it slightly (`x1.2`), and incorrect responses reset stability to baseline (`1.0`) to queue the topic for immediate re-learning.
+* **Scaffolded Routing Nodes**:
+  * Expanded `AgentState` in [`agent/graph.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/agent/graph.py) to manage active quiz sessions.
+  * Designed structurally distinct teaching nodes in LangGraph:
+    * `generate_overloaded`: Scaffolds explanations with simple vocabulary and worked examples, ending with a simple check-in question.
+    * `generate_underloaded`: Uses a Socratic approach to ask leading questions and prompt the user to discover solutions on their own.
+    * `generate_optimal`: Standard direct instruction, with automatic interception to generate active recall quiz questions when forgotten concepts are found.
+    * `evaluate_quiz`: Evaluates answers, writes updates to ChromaDB, prints feedback, and returns control to standard tutoring.
+* **UI Integration**:
+  * Integrated a visual feedback card in [`app.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/app.py) showing SRS results.
+  * Bypassed topic extraction on quiz interactions to prevent administrative text from polluting ChromaDB.
+* **Expanded Tests**:
+  * Added unit test assertions checking recall grading accuracy, Ebbinghaus stability calculations, and graph routing transitions. All **30 tests pass successfully**.

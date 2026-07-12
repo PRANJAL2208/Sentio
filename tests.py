@@ -158,6 +158,62 @@ count = update_clarification_count(ss, "huh? I'm confused")
 test("Second clarification → count=2", count == 2, f"got {count}")
 
 
+# ── Test 5: Active SRS & Scaffolded Routing ──────────────────────────────────
+print("\n[5] Active SRS & Scaffolded Routing")
+
+from memory.store import evaluate_user_answer, update_topic_stability
+from agent.graph import route_by_load
+
+class FakeLLM:
+    def __init__(self, response_content: str):
+        self.response_content = response_content
+
+    class ContentHolder:
+        def __init__(self, content: str):
+            self.content = content
+
+    def invoke(self, messages):
+        return self.ContentHolder(self.response_content)
+
+# 1. Test user recall evaluation
+llm_correct = FakeLLM("correct")
+grade_correct = evaluate_user_answer(llm_correct, "Self-attention weighs token similarity", "It calculates token similarity")
+test("evaluate_user_answer parses 'correct' grade", grade_correct == "correct", f"got {grade_correct}")
+
+llm_incorrect = FakeLLM("incorrect")
+grade_incorrect = evaluate_user_answer(llm_incorrect, "Self-attention weighs token similarity", "I forgot")
+test("evaluate_user_answer parses 'incorrect' grade", grade_incorrect == "incorrect", f"got {grade_incorrect}")
+
+# 2. Test stability updates
+try:
+    from memory.store import get_chroma_client, get_or_create_collection, store_topic
+    client = get_chroma_client(persist_dir="/tmp/sentio_test_db_srs")
+    collection = get_or_create_collection(client, user_id="test_user_srs")
+
+    topic_id = store_topic(collection, "Attention weighs queries and keys", "test_session", stability=2.0)
+
+    # Double on correct
+    new_stab = update_topic_stability(collection, topic_id, "correct")
+    test("Stability doubled on correct grade", new_stab == 4.0, f"got {new_stab}")
+
+    # Reset on incorrect
+    new_stab = update_topic_stability(collection, topic_id, "incorrect")
+    test("Stability reset to 1.0 on incorrect grade", new_stab == 1.0, f"got {new_stab}")
+
+    client.delete_collection("user_test_user_srs")
+except Exception as e:
+    test("SRS stability database updates", False, str(e))
+
+# 3. Test graph routing
+state_quiz_active = {"srs_quiz_active": True, "load_state": "OPTIMAL"}
+next_node = route_by_load(state_quiz_active)
+test("route_by_load routes to 'evaluate_quiz' if active", next_node == "evaluate_quiz", f"got {next_node}")
+
+state_quiz_inactive = {"srs_quiz_active": False, "load_state": "OVERLOADED"}
+next_node = route_by_load(state_quiz_inactive)
+test("route_by_load routes to load state if inactive", next_node == "generate_overloaded", f"got {next_node}")
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 print()
 print("=" * 60)
