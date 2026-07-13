@@ -204,7 +204,56 @@ try:
 except Exception as e:
     test("SRS stability database updates", False, str(e))
 
-# 3. Test graph routing
+
+# 3. Test optimal node suppression logic
+from agent.graph import _make_optimal_node
+
+class FakeCollection:
+    def get(self, *args, **kwargs):
+        import time
+        return {
+            "ids": ["dummy_id"],
+            "documents": ["Self-attention is a concept"],
+            "metadatas": [{"last_seen_at": time.time() - 999999, "stability": 1.0, "review_count": 0, "links_to": "[]"}]
+        }
+
+opt_node = _make_optimal_node(FakeLLM("quiz question"))
+
+state_cooldown = {
+    "memory_collection": FakeCollection(),
+    "turns_since_last_quiz": 2,
+    "recent_clarification_count": 0,
+    "user_message": "tell me more",
+    "chat_history": [],
+    "system_prompt": "You are a tutor",
+}
+res_cooldown = opt_node(state_cooldown)
+test("Optimal node suppresses quiz during cooldown (<4 turns)", res_cooldown["srs_quiz_active"] == False, f"got {res_cooldown['srs_quiz_active']}")
+
+state_clarifying = {
+    "memory_collection": FakeCollection(),
+    "turns_since_last_quiz": 4,
+    "recent_clarification_count": 1,
+    "user_message": "tell me more",
+    "chat_history": [],
+    "system_prompt": "You are a tutor",
+}
+res_clarifying = opt_node(state_clarifying)
+test("Optimal node suppresses quiz during clarification phase", res_clarifying["srs_quiz_active"] == False, f"got {res_clarifying['srs_quiz_active']}")
+
+state_trigger = {
+    "memory_collection": FakeCollection(),
+    "turns_since_last_quiz": 4,
+    "recent_clarification_count": 0,
+    "user_message": "tell me more",
+    "chat_history": [],
+    "system_prompt": "You are a tutor",
+}
+res_trigger = opt_node(state_trigger)
+test("Optimal node triggers quiz after cooldown", res_trigger["srs_quiz_active"] == True, f"got {res_trigger['srs_quiz_active']}")
+
+
+# 4. Test graph routing
 state_quiz_active = {"srs_quiz_active": True, "load_state": "OPTIMAL"}
 next_node = route_by_load(state_quiz_active)
 test("route_by_load routes to 'evaluate_quiz' if active", next_node == "evaluate_quiz", f"got {next_node}")

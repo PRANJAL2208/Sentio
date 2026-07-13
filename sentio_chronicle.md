@@ -91,13 +91,13 @@ The mathematical thresholds used in Sentio's load classifier are drawn directly 
   * Designed structurally distinct teaching nodes in LangGraph:
     * `generate_overloaded`: Scaffolds explanations with simple vocabulary and worked examples, ending with a simple check-in question.
     * `generate_underloaded`: Uses a Socratic approach to ask leading questions and prompt the user to discover solutions on their own.
-    * `generate_optimal`: Standard direct instruction, with automatic interception to generate active recall quiz questions when forgotten concepts are found.
+    * `generate_optimal`: Standard direct instruction, with automatic interception to generate active recall quiz questions when forgotten concepts are found. It uses a **Spacing Cooldown** (minimum of 4 turns between quizzes) and checks for active **Clarification requests** to prevent disrupting natural follow-up conversations.
     * `evaluate_quiz`: Evaluates answers, writes updates to ChromaDB, prints feedback, and returns control to standard tutoring.
 * **UI Integration**:
   * Integrated a visual feedback card in [`app.py`](file:///c:/Users/DELL/Desktop/projects/cogniflow/app.py) showing SRS results.
   * Bypassed topic extraction on quiz interactions to prevent administrative text from polluting ChromaDB.
 * **Expanded Tests**:
-  * Added unit test assertions checking recall grading accuracy, Ebbinghaus stability calculations, and graph routing transitions. All **30 tests pass successfully**.
+  * Added unit test assertions checking recall grading accuracy, Ebbinghaus stability calculations, spacing cooldown, clarification suppression, and graph routing transitions. All **38 tests pass successfully**.
 
 ---
 

@@ -50,6 +50,7 @@ def init_session():
         "load_state_history":    [],        # for the sidebar debug panel
         "srs_quiz_active":       False,
         "srs_topic_id":          "",
+        "turns_since_last_quiz": 4,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -320,6 +321,7 @@ if user_input := st.chat_input("Ask me anything..."):
                     backspace_count=telemetry["backspace_count"],
                     srs_quiz_active=st.session_state["srs_quiz_active"],
                     srs_topic_id=st.session_state["srs_topic_id"],
+                    turns_since_last_quiz=st.session_state["turns_since_last_quiz"],
                 )
 
             st.markdown(result["response"])
@@ -335,6 +337,7 @@ if user_input := st.chat_input("Ask me anything..."):
     # 4. Update session state
     st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
     st.session_state["srs_topic_id"] = result["srs_topic_id"]
+    st.session_state["turns_since_last_quiz"] = result["turns_since_last_quiz"]
 
     st.session_state["chat_history"].append({"role": "user", "content": user_input})
     st.session_state["chat_history"].append({

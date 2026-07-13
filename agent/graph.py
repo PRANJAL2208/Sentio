@@ -43,6 +43,7 @@ class AgentState(TypedDict):
     srs_quiz_active: bool
     srs_topic_id: str
     srs_evaluation: str
+    turns_since_last_quiz: int
 
     # Computed by nodes
     load_state: str                # "OVERLOADED" | "OPTIMAL" | "UNDERLOADED"
@@ -154,8 +155,14 @@ def _make_socratic_node(llm: BaseChatModel):
 
 def _make_optimal_node(llm: BaseChatModel):
     def node(state: AgentState) -> AgentState:
-        # Check for forgotten topics (retention < 0.7)
-        forgotten = get_forgotten_topics(state["memory_collection"], retention_threshold=0.7, max_results=1)
+        turns_since_quiz = state.get("turns_since_last_quiz", 4)
+        is_clarifying = state.get("recent_clarification_count", 0) > 0
+
+        # Only quiz if not clarifying and at least 4 turns since last quiz
+        forgotten = []
+        if turns_since_quiz >= 4 and not is_clarifying:
+            forgotten = get_forgotten_topics(state["memory_collection"], retention_threshold=0.7, max_results=1)
+
         if forgotten:
             topic = forgotten[0]
             quiz_prompt = f"""You are a helpful AI tutor. The user is in flow (Optimal state). 
@@ -173,6 +180,7 @@ Keep the quiz question simple, clear, and engaging.
                 "srs_quiz_active": True,
                 "srs_topic_id": topic["topic_id"],
                 "srs_evaluation": "",
+                "turns_since_last_quiz": 0,
             }
         
         # Standard direct instruction node
@@ -192,6 +200,7 @@ Keep the quiz question simple, clear, and engaging.
             "srs_quiz_active": False,
             "srs_topic_id": "",
             "srs_evaluation": "",
+            "turns_since_last_quiz": turns_since_quiz + 1,
         }
     return node
 
@@ -206,6 +215,7 @@ def _make_evaluate_quiz_node(llm: BaseChatModel):
                 "srs_quiz_active": False,
                 "srs_topic_id": "",
                 "srs_evaluation": "",
+                "turns_since_last_quiz": 1,
             }
         
         topic_summary = result["documents"][0]
@@ -227,6 +237,7 @@ def _make_evaluate_quiz_node(llm: BaseChatModel):
             "srs_quiz_active": False,
             "srs_topic_id": "",
             "srs_evaluation": grade,
+            "turns_since_last_quiz": 1,
         }
     return node
 
@@ -284,6 +295,7 @@ def run_agent(
     backspace_count: int = 0,
     srs_quiz_active: bool = False,
     srs_topic_id: str = "",
+    turns_since_last_quiz: int = 4,
 ) -> dict:
     """
     Single function to call from app.py.
@@ -302,6 +314,7 @@ def run_agent(
         "srs_quiz_active": srs_quiz_active,
         "srs_topic_id": srs_topic_id,
         "srs_evaluation": "",
+        "turns_since_last_quiz": turns_since_last_quiz,
         "load_state": "",
         "load_confidence": 0.0,
         "load_signals": {},
@@ -320,4 +333,5 @@ def run_agent(
         "srs_quiz_active": final_state.get("srs_quiz_active", False),
         "srs_topic_id":    final_state.get("srs_topic_id", ""),
         "srs_evaluation":  final_state.get("srs_evaluation", ""),
+        "turns_since_last_quiz": final_state.get("turns_since_last_quiz", 4),
     }
