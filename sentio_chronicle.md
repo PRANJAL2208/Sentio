@@ -98,3 +98,25 @@ The mathematical thresholds used in Sentio's load classifier are drawn directly 
   * Bypassed topic extraction on quiz interactions to prevent administrative text from polluting ChromaDB.
 * **Expanded Tests**:
   * Added unit test assertions checking recall grading accuracy, Ebbinghaus stability calculations, and graph routing transitions. All **30 tests pass successfully**.
+
+---
+
+## 5. Development Diary (Design Comparisons & Analytics Expansion)
+
+### A. Graph Visualization Choice: Graphviz vs. Streamlit-Agraph vs. Pyvis
+When planning the visual Concept Map visualization, we compared three main technical paths:
+1. **Streamlit-Agraph (React wrapper)**:
+   * *Pros*: Supports interactive draggable nodes, zoom, and custom CSS styling.
+   * *Cons*: Requires separate package installations (`pip install streamlit-agraph`), which has dependency resolution errors on some lockfiles and requires custom server-side state compilation.
+2. **Pyvis (HTML compilation inside Iframe)**:
+   * *Pros*: High visual polish, physics-based animations, search boxes, and zoom.
+   * *Cons*: Requires writing custom local HTML files to the filesystem and wrapping them inside an Iframe, which causes cross-origin warning banners inside Streamlit.
+3. **Graphviz (Native Streamlit component `st.graphviz_chart`)**:
+   * *Pros*: Zero external package requirements (built natively into Streamlit), extremely reliable across Windows/Linux without compilation errors, clean mathematical layouts, and outputs crisp vector SVGs.
+   * *Selection*: We selected **Graphviz** for its robustness, native engine integration, and layout rendering safety.
+
+### B. Analytical UI Layout: Tabs vs. Sidebar Expanders
+To incorporate analytics without cluttering the chat tutor experience:
+* *Sidebar Expanders*: Placing graphs and metrics in the sidebar squeezes charts into a narrow width (`< 300px`), making text overlaps in Graphviz and detailed telemetry timelines hard to read.
+* *Tabbed Layout (`st.tabs`)*: Tab division keeps the screen wide and readable. The user can chat distraction-free in the first tab and toggle to the second tab to view charts and download study guides in full resolution.
+* *Selection*: We implemented a top-level tab division: **`💬 Sentio Tutor`** and **`📊 Learning Dashboard`**.

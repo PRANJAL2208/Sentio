@@ -214,6 +214,44 @@ next_node = route_by_load(state_quiz_inactive)
 test("route_by_load routes to load state if inactive", next_node == "generate_overloaded", f"got {next_node}")
 
 
+# ── Test 6: Relationships & Concept Maps ──────────────────────────────────────
+print("\n[6] Relationships & Concept Maps")
+
+from memory.store import extract_topics_from_response
+
+# 1. Test relationship extraction prompt format
+llm_relation = FakeLLM('{"concepts": [{"summary": "Transformers use self-attention", "links_to": ["Transformers"]}]}')
+concepts = extract_topics_from_response(llm_relation, "dummy tutor text explaining transformers")
+test("extract_topics_from_response extracts structured dict", len(concepts) == 1 and isinstance(concepts[0], dict), f"got {concepts}")
+test("extract_topics_from_response preserves summary", concepts[0].get("summary") == "Transformers use self-attention", f"got {concepts}")
+test("extract_topics_from_response preserves links_to", concepts[0].get("links_to") == ["Transformers"], f"got {concepts}")
+
+# 2. Test storing relationships in ChromaDB
+try:
+    client = get_chroma_client(persist_dir="/tmp/sentio_test_db_relations")
+    collection = get_or_create_collection(client, user_id="test_user_relations")
+
+    topic_id = store_topic(
+        collection, 
+        topic_summary="Transformers use self-attention", 
+        session_id="test_session", 
+        stability=1.0, 
+        links_to=["Transformers", "Attention"]
+    )
+
+    stored = collection.get(ids=[topic_id], include=["metadatas"])
+    meta = stored["metadatas"][0]
+    test("stored topic preserves links_to as serialized JSON string", "links_to" in meta, f"got {meta}")
+    
+    import json
+    links = json.loads(meta["links_to"])
+    test("links_to list matches original values", links == ["Transformers", "Attention"], f"got {links}")
+
+    client.delete_collection("user_test_user_relations")
+except Exception as e:
+    test("Relationships database updates", False, str(e))
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 print()
 print("=" * 60)

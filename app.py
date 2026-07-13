@@ -264,17 +264,31 @@ compiled_graph = get_agent(llm)
 extractor_llm = get_extractor_llm(provider, model_name, resolved_api_key)
 
 
-# ── Render existing chat history ──────────────────────────────────────────────
+# ── Page Layout: Tabs ─────────────────────────────────────────────────────────
 
-for turn in st.session_state["chat_history"]:
-    with st.chat_message(turn["role"]):
-        st.markdown(turn["content"])
-        if show_load_badge and turn["role"] == "assistant" and "load_state" in turn:
-            badge = {"OVERLOADED": "🔴 simplified", "OPTIMAL": "🟢 normal", "UNDERLOADED": "🔵 enriched"}
-            st.caption(badge.get(turn["load_state"], ""))
-        if turn["role"] == "assistant" and turn.get("srs_evaluation"):
-            grade_emojis = {"correct": "🎯 Correct!", "partial": "⚠️ Close!", "incorrect": "❌ Not quite."}
-            st.info(f"**Spaced Repetition Practice**: {grade_emojis.get(turn['srs_evaluation'], '')}")
+tab_tutor, tab_dashboard = st.tabs(["💬 Sentio Tutor", "📊 Learning Dashboard"])
+
+
+# ── Render Tutor Interface ───────────────────────────────────────────────────
+
+with tab_tutor:
+    # Render existing chat history
+    for turn in st.session_state["chat_history"]:
+        with st.chat_message(turn["role"]):
+            st.markdown(turn["content"])
+            if show_load_badge and turn["role"] == "assistant" and "load_state" in turn:
+                badge = {"OVERLOADED": "🔴 simplified", "OPTIMAL": "🟢 normal", "UNDERLOADED": "🔵 enriched"}
+                st.caption(badge.get(turn["load_state"], ""))
+            if turn["role"] == "assistant" and turn.get("srs_evaluation"):
+                grade_emojis = {"correct": "🎯 Correct!", "partial": "⚠️ Close!", "incorrect": "❌ Not quite."}
+                st.info(f"**Spaced Repetition Practice**: {grade_emojis.get(turn['srs_evaluation'], '')}")
+
+    if not st.session_state["chat_history"]:
+        st.info(
+            "👋 Start chatting about any topic you're learning. "
+            "Sentio will detect when you're overwhelmed or bored and adapt automatically. "
+            "Watch the **Load Monitor** in the sidebar."
+        )
 
 
 # ── Chat input ────────────────────────────────────────────────────────────────
@@ -287,38 +301,38 @@ if user_input := st.chat_input("Ask me anything..."):
     # 2. Count recent clarifications
     clarification_count = update_clarification_count(st.session_state, user_input)
 
-    # 3. Show user message immediately
-    with st.chat_message("user"):
-        st.markdown(user_input)
+    # 3. Show user message and query agent inside tutor tab
+    with tab_tutor:
+        with st.chat_message("user"):
+            st.markdown(user_input)
 
-    # 4. Run the agent
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            result = run_agent(
-                compiled_graph=compiled_graph,
-                user_message=user_input,
-                pause_seconds=telemetry["pause_seconds"],
-                chat_history=st.session_state["chat_history"],
-                memory_collection=memory_collection,
-                recent_clarification_count=clarification_count,
-                avg_dwell_ms=telemetry["avg_dwell_ms"],
-                avg_flight_ms=telemetry["avg_flight_ms"],
-                backspace_count=telemetry["backspace_count"],
-                srs_quiz_active=st.session_state["srs_quiz_active"],
-                srs_topic_id=st.session_state["srs_topic_id"],
-            )
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                result = run_agent(
+                    compiled_graph=compiled_graph,
+                    user_message=user_input,
+                    pause_seconds=telemetry["pause_seconds"],
+                    chat_history=st.session_state["chat_history"],
+                    memory_collection=memory_collection,
+                    recent_clarification_count=clarification_count,
+                    avg_dwell_ms=telemetry["avg_dwell_ms"],
+                    avg_flight_ms=telemetry["avg_flight_ms"],
+                    backspace_count=telemetry["backspace_count"],
+                    srs_quiz_active=st.session_state["srs_quiz_active"],
+                    srs_topic_id=st.session_state["srs_topic_id"],
+                )
 
-        st.markdown(result["response"])
+            st.markdown(result["response"])
 
-        if show_load_badge:
-            badge = {
-                "OVERLOADED":  "🔴 simplified response",
-                "OPTIMAL":     "🟢 normal response",
-                "UNDERLOADED": "🔵 enriched response",
-            }
-            st.caption(badge.get(result["load_state"], ""))
+            if show_load_badge:
+                badge = {
+                    "OVERLOADED":  "🔴 simplified response",
+                    "OPTIMAL":     "🟢 normal response",
+                    "UNDERLOADED": "🔵 enriched response",
+                }
+                st.caption(badge.get(result["load_state"], ""))
 
-    # 5. Update session state
+    # 4. Update session state
     st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
     st.session_state["srs_topic_id"] = result["srs_topic_id"]
 
@@ -335,15 +349,16 @@ if user_input := st.chat_input("Ask me anything..."):
         "signals":    result["load_signals"],
     })
 
-    # 6. Store topics in memory (background, non-blocking)
+    # 5. Store topics in memory (background, non-blocking)
     if not result.get("srs_evaluation") and not result.get("srs_quiz_active"):
         try:
             topics = extract_topics_from_response(extractor_llm, result["response"])
             for topic in topics:
                 store_topic(
                     collection=memory_collection,
-                    topic_summary=topic,
+                    topic_summary=topic["summary"],
                     session_id=st.session_state["session_id"],
+                    links_to=topic["links_to"],
                 )
 
             # If any forgotten topics were resurfaced, update their stability
@@ -354,12 +369,172 @@ if user_input := st.chat_input("Ask me anything..."):
         except Exception:
             pass  # memory is enhancement — never block the chat
 
+    st.rerun()
 
-# ── First-time welcome message ────────────────────────────────────────────────
 
-if not st.session_state["chat_history"]:
-    st.info(
-        "👋 Start chatting about any topic you're learning. "
-        "Sentio will detect when you're overwhelmed or bored and adapt automatically. "
-        "Watch the **Load Monitor** in the sidebar."
-    )
+# ── Render learning dashboard ───────────────────────────────────────────────
+
+with tab_dashboard:
+    st.markdown("## 📊 Learning Analytics Dashboard")
+    st.caption("Track your biometrics, memory retention curves, and concept associations in real-time.")
+
+    # 1. Telemetry trends
+    if st.session_state["load_state_history"]:
+        st.markdown("### ⌨️ Typing Telemetry Trends")
+        
+        steps = list(range(1, len(st.session_state["load_state_history"]) + 1))
+        flight_history = []
+        dwell_history = []
+        backspaces_history = []
+        pause_history = []
+
+        for item in st.session_state["load_state_history"]:
+            sig = item["signals"]
+            flight_history.append(sig.get("avg_flight_ms", 0.0))
+            dwell_history.append(sig.get("avg_dwell_ms", 0.0))
+            backspaces_history.append(sig.get("backspace_count", 0))
+            pause_history.append(sig.get("pause_seconds", 0.0))
+
+        import pandas as pd
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Typing Latencies (ms)**")
+            df_latencies = pd.DataFrame({
+                "Flight Time (ms)": flight_history,
+                "Dwell Time (ms)": dwell_history
+            }, index=steps)
+            st.line_chart(df_latencies)
+        with col2:
+            st.markdown("**User Hesitations & Editing**")
+            df_editing = pd.DataFrame({
+                "Backspace Count": backspaces_history,
+                "Pause Time (s)": pause_history
+            }, index=steps)
+            st.line_chart(df_editing)
+    else:
+        st.info("No telemetry logs recorded yet. Start chatting to populate these trends!")
+
+    # 2. Memory retention curves
+    st.markdown("---")
+    st.markdown("### 🧠 Memory Retention Curves")
+    all_items = memory_collection.get(include=["documents", "metadatas"])
+    
+    if all_items["ids"]:
+        from memory.store import retention_score
+        topic_summaries = []
+        retentions = []
+        stabilities = []
+
+        for doc, meta in zip(all_items["documents"], all_items["metadatas"]):
+            r = retention_score(meta["last_seen_at"], meta["stability"])
+            topic_summaries.append(doc[:40] + "..." if len(doc) > 40 else doc)
+            retentions.append(r)
+            stabilities.append(meta["stability"])
+
+        import pandas as pd
+        df_retention = pd.DataFrame({
+            "Topic": topic_summaries,
+            "Retention Score": retentions,
+            "Stability (days)": stabilities
+        }).set_index("Topic")
+
+        st.bar_chart(df_retention["Retention Score"])
+        st.dataframe(df_retention.style.format({"Retention Score": "{:.1%}", "Stability (days)": "{:.2f}"}))
+    else:
+        st.info("No concepts recorded in your long-term memory database yet.")
+
+    # 3. Knowledge Graph concept map
+    st.markdown("---")
+    st.markdown("### 🕸️ Concept Association Map")
+    
+    if all_items["ids"]:
+        dot_lines = [
+            "digraph G {",
+            '  node [shape=box, style="filled,rounded", color="#e0f2fe", fillcolor="#f0f9ff", fontname="Arial", fontsize=10];',
+            '  edge [color="#cbd5e1", penwidth=1.5];',
+            '  bgcolor="transparent";',
+        ]
+
+        edges = set()
+        for doc, meta in zip(all_items["documents"], all_items["metadatas"]):
+            label = doc[:45] + "..." if len(doc) > 45 else doc
+            label = label.replace('"', '\\"').replace('\n', ' ')
+            node_id = f'"{label}"'
+
+            links_raw = meta.get("links_to", "[]")
+            try:
+                links = json.loads(links_raw)
+            except Exception:
+                links = []
+
+            for parent in links:
+                parent_label = parent.replace('"', '\\"').replace('\n', ' ')
+                parent_id = f'"{parent_label}"'
+                edges.add((parent_id, node_id))
+
+        for p_id, c_id in edges:
+            dot_lines.append(f"  {p_id} -> {c_id};")
+
+        dot_lines.append("}")
+        dot_string = "\n".join(dot_lines)
+
+        if len(edges) > 0:
+            st.graphviz_chart(dot_string)
+        else:
+            st.caption("No connections established yet. Keep teaching concepts to see relationships form!")
+    else:
+        st.caption("Graph maps will draw automatically once you cover related topics.")
+
+    # 4. Exporter
+    st.markdown("---")
+    st.markdown("### 📥 Study Resource Exporter")
+    st.markdown("Generate and download a personalized Markdown Study Guide and Active Recall Flashcard deck.")
+    
+    if all_items["ids"]:
+        if st.button("Build Study Guide & Flashcards"):
+            with st.spinner("Compiling concepts and generating flashcards..."):
+                md_lines = [
+                    "# Sentio Study Guide & Flashcard Deck",
+                    f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    "\n## 📚 Core Concept Index\n"
+                ]
+                
+                concepts_text = ""
+                for i, (doc, meta) in enumerate(zip(all_items["documents"], all_items["metadatas"]), 1):
+                    pct = int(retention_score(meta["last_seen_at"], meta["stability"]) * 100)
+                    md_lines.append(f"{i}. **{doc}**")
+                    md_lines.append(f"   * Stability: `{meta['stability']:.2f}` days | Estimated Retention: `{pct}%` \n")
+                    concepts_text += f"Concept {i}: {doc}\n"
+
+                prompt = f"""You are a helpful study assistant. Create 1 active-recall flashcard (1 Question, 1 Answer) for each of the following concepts.
+Keep the questions and answers clear, concise, and focused on self-testing.
+
+Concepts:
+{concepts_text}
+
+Format the output strictly as a Markdown checklist like:
+### 🎴 Flashcard Deck
+- **Q**: [Question]
+  **A**: [Answer]
+"""
+                try:
+                    from langchain_core.messages import SystemMessage
+                    res = extractor_llm.invoke([SystemMessage(content=prompt)])
+                    flashcards_md = res.content.strip()
+                    md_lines.append("\n" + flashcards_md)
+                except Exception as e:
+                    md_lines.append("\n### 🎴 Flashcards (Fallback)\n(Could not auto-generate flashcards: " + str(e) + ")")
+
+                full_md = "\n".join(md_lines)
+                
+                st.markdown("#### Preview:")
+                st.markdown(full_md[:1000] + "\n..." if len(full_md) > 1000 else full_md)
+                
+                st.download_button(
+                    label="💾 Download Markdown File",
+                    data=full_md,
+                    file_name="Sentio_Study_Guide.md",
+                    mime="text/markdown"
+                )
+    else:
+        st.info("Start chatting to generate concepts for a study guide!")

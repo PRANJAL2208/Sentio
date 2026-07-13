@@ -45,21 +45,24 @@ def store_topic(
     topic_summary: str,
     session_id: str,
     stability: float = 1.0,
+    links_to: list[str] = None,
 ) -> str:
     """
-    Store a topic that was explained in this session.
+    Store a topic that was explained in this session, along with optional conceptual links.
 
     Args:
         collection: ChromaDB collection
         topic_summary: 1-2 sentence summary of what was explained
         session_id: identifier for this chat session
         stability: how deeply it was covered (1.0 default, increase for revisited topics)
+        links_to: list of related parent topic strings
 
     Returns:
         topic_id (str)
     """
     topic_id = str(uuid.uuid4())
     now_ts = time.time()
+    links_str = json.dumps(links_to or [])
 
     collection.add(
         documents=[topic_summary],
@@ -71,6 +74,7 @@ def store_topic(
             "stability": stability,
             "review_count": 0,
             "learned_date": datetime.now().isoformat(),
+            "links_to": links_str,
         }],
     )
     return topic_id
@@ -185,19 +189,34 @@ def build_memory_context(collection) -> str:
 # ── Extracting topics from LLM responses ─────────────────────────────────────
 
 TOPIC_EXTRACTION_PROMPT = """
-You are a topic extractor. Given an AI tutor's response, extract the 1-3 main concepts
-that were explained. Return ONLY a JSON array of short strings (1 sentence each).
-Example: ["Transformer attention computes similarity between query and key vectors",
-          "Softmax normalizes attention scores into probabilities"]
-If no clear concept was explained, return [].
-Only return the JSON array, nothing else.
+You are a topic and relationship extractor. Given an AI tutor's response, extract the 1-3 main concepts
+that were explained. For each concept, provide:
+1. "summary": A 1-sentence summary of the concept explained.
+2. "links_to": A list of 1-3 parent topics or related terms (like keywords or categories) that this concept connects to.
+
+Return ONLY a JSON object with a single key "concepts" mapping to a list of these objects.
+Example:
+{
+  "concepts": [
+    {
+      "summary": "Transformer attention computes similarity between query and key vectors",
+      "links_to": ["Transformers", "Attention Mechanism"]
+    },
+    {
+      "summary": "Softmax normalizes attention scores into probabilities",
+      "links_to": ["Attention Mechanism", "Softmax"]
+    }
+  ]
+}
+If no clear concept was explained, return {"concepts": []}.
+Only return the JSON object, nothing else.
 """
 
 
-def extract_topics_from_response(llm, response_text: str) -> list[str]:
+def extract_topics_from_response(llm, response_text: str) -> list[dict]:
     """
-    Use a fast LLM call to extract topics from the assistant's response.
-    These get stored in ChromaDB for the forgetting curve.
+    Use a fast LLM call to extract topics and their relationship links from the response.
+    Returns: [{"summary": str, "links_to": list[str]}]
     """
     from langchain_core.messages import SystemMessage, HumanMessage
     try:
@@ -217,8 +236,22 @@ def extract_topics_from_response(llm, response_text: str) -> list[str]:
                 lines = lines[:-1]
             raw = "\n".join(lines).strip()
 
-        topics = json.loads(raw)
-        return topics if isinstance(topics, list) else []
+        data = json.loads(raw)
+        if isinstance(data, dict) and "concepts" in data:
+            return data["concepts"]
+        elif isinstance(data, list):
+            # Fallback for old output format
+            out = []
+            for item in data:
+                if isinstance(item, str):
+                    out.append({"summary": item, "links_to": []})
+                elif isinstance(item, dict):
+                    out.append({
+                        "summary": item.get("summary", ""),
+                        "links_to": item.get("links_to", [])
+                    })
+            return out
+        return []
     except Exception:
         return []  # fail silently — memory is enhancement, not core path
 
