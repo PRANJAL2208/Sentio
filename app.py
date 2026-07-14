@@ -502,6 +502,38 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
     box-shadow: 0 0 25px rgba(99, 102, 241, 0.25) !important;
     transform: scale(1.03) !important;
 }
+
+/* Ensure all markdown text and list items inside the sidebar are highly legible (light grey/indigo) */
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] small,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1 {
+    color: #cbd5e1 !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li strong {
+    color: #e2e8f0 !important;
+}
+
+/* Force the sticky bottom chat input container block to match the deep dark space theme and not render white */
+[data-testid="stBottom"] {
+    background-color: #030307 !important;
+    background: #030307 !important;
+    border-top: 1px solid rgba(99, 102, 241, 0.15) !important;
+}
+
+[data-testid="stBottom"] > div {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+[data-testid="stChatInput"] {
+    background-color: rgba(10, 10, 18, 0.95) !important;
+    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
