@@ -99,7 +99,6 @@ html, body, [data-testid="stAppViewContainer"] {
     width: 100vw;
     height: 100vh;
     pointer-events: none;
-    z-index: 99;
 }
 
 .nebula-bg {
@@ -507,15 +506,45 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] small,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1 {
-    color: #cbd5e1 !important;
+    color: #e2e8f0 !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] li strong {
-    color: #e2e8f0 !important;
+    color: #ffffff !important;
+}
+
+/* Sidebar captions, small elements, and minor system labels */
+[data-testid="stSidebar"] p[class*="caption"],
+[data-testid="stSidebar"] span[class*="caption"],
+[data-testid="stSidebar"] div[data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] small {
+    color: #94a3b8 !important;
+}
+
+/* Sidebar dividers */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+/* Sidebar expanders styling (Raw signals, etc.) */
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+    border-radius: 6px !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    color: #a5b4fc !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 600 !important;
+}
+
+/* Sidebar checkbox and toggle labels */
+[data-testid="stSidebar"] label[data-testid="stWidgetLabel"] p {
+    color: #cbd5e1 !important;
 }
 
 /* Force the sticky bottom chat input container block to match the deep dark space theme and not render white */
@@ -533,6 +562,58 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
 [data-testid="stChatInput"] {
     background-color: rgba(10, 10, 18, 0.95) !important;
     border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.08) !important;
+}
+
+[data-testid="stChatInput"] div {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+[data-testid="stChatInput"] textarea {
+    color: #fafafa !important;
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+textarea::placeholder, input::placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Force main content text color to light grey/white to prevent dark-on-dark invisible text in Light OS mode */
+[data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] li,
+[data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] span,
+[data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] small,
+[data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] strong,
+[data-testid="stAppViewContainer"] label {
+    color: #e2e8f0 !important;
+}
+
+[data-testid="stAppViewContainer"] h1,
+[data-testid="stAppViewContainer"] h2,
+[data-testid="stAppViewContainer"] h3,
+[data-testid="stAppViewContainer"] h4,
+[data-testid="stAppViewContainer"] h5,
+[data-testid="stAppViewContainer"] h6 {
+    color: #ffffff !important;
+}
+
+/* Futuristic warning alert blocks (st.error/st.warning/st.info overrides) */
+div[data-testid="stAlert"] {
+    background-color: rgba(244, 63, 94, 0.08) !important;
+    border: 1px solid rgba(244, 63, 94, 0.35) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.1) !important;
+}
+
+div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+    color: #fb7185 !important;
+}
+
+div[data-testid="stAlert"] [data-testid="stMarkdownContainer"] strong {
+    color: #ffffff !important;
 }
 </style>
 """, unsafe_allow_html=True)
