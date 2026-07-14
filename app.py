@@ -34,6 +34,18 @@ st.set_page_config(
     layout="centered",
 )
 
+# ── Space HUD Viewport Overlay ──
+st.markdown("""
+<div class="sentio-space-hud">
+    <div class="nebula-bg"></div>
+    <div class="grid-overlay"></div>
+    <div class="hud-line hud-top-left"></div>
+    <div class="hud-line hud-top-right"></div>
+    <div class="hud-line hud-bottom-left"></div>
+    <div class="hud-line hud-bottom-right"></div>
+</div>
+""", unsafe_allow_html=True)
+
 st.title("🧠 Sentio")
 st.caption("An AI tutor that adapts to your cognitive state in real time.")
 
@@ -67,11 +79,11 @@ st.text_input("telemetry_data", label_visibility="collapsed", key="telemetry_inp
 # Hide the telemetry text input via CSS and apply premium styling overrides
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
 
 html, body, [data-testid="stAppViewContainer"] {
     font-family: 'Plus Jakarta Sans', sans-serif !important;
-    background-color: #09090b !important;
+    background-color: #030307 !important;
     color: #f4f4f5 !important;
 }
 
@@ -79,48 +91,205 @@ html, body, [data-testid="stAppViewContainer"] {
     background-color: transparent !important;
 }
 
+/* 🌌 Cinematic Background layers */
+.sentio-space-hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 99;
+}
+
+.nebula-bg {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 45%),
+                radial-gradient(circle at 50% 50%, rgba(244, 63, 94, 0.06) 0%, transparent 50%),
+                #030307;
+    z-index: -2;
+    pointer-events: none;
+}
+
+.grid-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: 30px 30px;
+    z-index: -1;
+    pointer-events: none;
+}
+
+/* Cinematic Cyber Brackets */
+.hud-line {
+    position: fixed;
+    background-color: rgba(99, 102, 241, 0.35);
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.hud-top-left {
+    top: 20px;
+    left: 20px;
+    width: 60px;
+    height: 2px;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+.hud-top-left::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 60px;
+    background-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+
+.hud-top-right {
+    top: 20px;
+    right: 20px;
+    width: 60px;
+    height: 2px;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+.hud-top-right::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 2px;
+    height: 60px;
+    background-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+
+.hud-bottom-left {
+    bottom: 20px;
+    left: 20px;
+    width: 60px;
+    height: 2px;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+.hud-bottom-left::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 2px;
+    height: 60px;
+    background-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+
+.hud-bottom-right {
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 2px;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+.hud-bottom-right::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 2px;
+    height: 60px;
+    background-color: rgba(99, 102, 241, 0.35);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.6);
+}
+
+/* ⚙️ Sidebar [SYSTEM DECK] Panel */
 [data-testid="stSidebar"] {
-    background-color: rgba(9, 9, 11, 0.95) !important;
-    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
-    backdrop-filter: blur(10px) !important;
+    background-color: rgba(10, 10, 18, 0.96) !important;
+    border-right: 1px solid rgba(99, 102, 241, 0.25) !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.08) !important;
+}
+
+/* Custom visual system titles inside sidebar */
+[data-testid="stSidebarUserContent"]::before {
+    content: '[ SYSTEM DECK ]' !important;
+    display: block !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    color: #818cf8 !important;
+    letter-spacing: 0.15em !important;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.2) !important;
+    padding-bottom: 10px !important;
+    margin-bottom: 20px !important;
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.5) !important;
+}
+
+/* Styling Inputs with cyber themes */
+div[data-testid="stSelectbox"] > label, div[data-testid="stTextInput"] > label {
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 600 !important;
+    color: #a5b4fc !important;
+    letter-spacing: 0.05em !important;
+}
+
+div[data-testid="stSelectbox"] [data-baseweb="select"], div[data-testid="stTextInput"] input {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    border-radius: 6px !important;
+    color: #ffffff !important;
+    transition: all 0.2s ease !important;
+}
+
+div[data-testid="stSelectbox"] [data-baseweb="select"]:hover, div[data-testid="stTextInput"] input:hover {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.2) !important;
 }
 
 div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
     display: none !important;
 }
 
-/* Restyle tabs */
+/* 💬 Holographic central Visor console header */
 .stTabs [data-baseweb="tab-list"] {
     gap: 8px !important;
-    background-color: rgba(255, 255, 255, 0.02) !important;
+    background-color: rgba(99, 102, 241, 0.05) !important;
     padding: 6px !important;
     border-radius: 12px !important;
-    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(99, 102, 241, 0.2) !important;
 }
 
 .stTabs [data-baseweb="tab"] {
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-family: 'Outfit', sans-serif !important;
     height: 38px !important;
-    white-space: nowrap !important;
     border-radius: 8px !important;
     border: none !important;
-    color: rgba(255, 255, 255, 0.6) !important;
+    color: rgba(255, 255, 255, 0.5) !important;
     background-color: transparent !important;
     font-weight: 600 !important;
     font-size: 0.9rem !important;
-    padding: 0 16px !important;
+    letter-spacing: 0.05em !important;
+    padding: 0 20px !important;
     transition: all 0.2s ease !important;
 }
 
 .stTabs [data-baseweb="tab"]:hover {
     color: #ffffff !important;
-    background-color: rgba(255, 255, 255, 0.04) !important;
+    background-color: rgba(99, 102, 241, 0.1) !important;
 }
 
 .stTabs [data-baseweb="tab"][aria-selected="true"] {
     color: #ffffff !important;
-    background-color: rgba(99, 102, 241, 0.15) !important;
-    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    background-color: rgba(99, 102, 241, 0.25) !important;
+    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2) !important;
 }
 
 .stTabs [role="tabpanel"] {
@@ -129,9 +298,15 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
 
 /* Chat Input styling */
 [data-testid="stChatInput"] {
-    background-color: rgba(255, 255, 255, 0.03) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
-    border-radius: 12px !important;
+    background-color: rgba(10, 10, 18, 0.85) !important;
+    border: 1px solid rgba(99, 102, 241, 0.35) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.08) !important;
+}
+
+[data-testid="stChatInput"]:focus-within {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.2) !important;
 }
 
 [data-testid="stChatInput"] textarea {
@@ -173,32 +348,32 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
 }
 
 .sentio-bubble-user {
-    background: rgba(255, 255, 255, 0.04) !important;
-    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(99, 102, 241, 0.2) !important;
     border-bottom-right-radius: 4px !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.05) !important;
 }
 
 .sentio-bubble-tutor {
-    background: rgba(255, 255, 255, 0.02) !important;
+    background: rgba(10, 10, 18, 0.6) !important;
     border-bottom-left-radius: 4px !important;
     backdrop-filter: blur(12px) !important;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
 }
 
 .sentio-glow-overloaded {
-    border: 1px solid rgba(244, 63, 94, 0.35) !important;
-    box-shadow: 0 0 15px rgba(244, 63, 94, 0.08) !important;
+    border: 1px solid rgba(244, 63, 94, 0.4) !important;
+    box-shadow: 0 0 20px rgba(244, 63, 94, 0.12) !important;
 }
 
 .sentio-glow-optimal {
-    border: 1px solid rgba(16, 185, 129, 0.35) !important;
-    box-shadow: 0 0 15px rgba(16, 185, 129, 0.08) !important;
+    border: 1px solid rgba(16, 185, 129, 0.4) !important;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.12) !important;
 }
 
 .sentio-glow-underloaded {
-    border: 1px solid rgba(99, 102, 241, 0.35) !important;
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.08) !important;
+    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.12) !important;
 }
 
 .sentio-badge {
@@ -246,60 +421,86 @@ div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
     display: flex;
     gap: 16px;
     width: 100%;
-    margin-bottom: 24px;
+    margin-bottom: 30px;
     flex-wrap: wrap;
 }
 
 .sentio-stats-card {
     flex: 1;
-    min-width: 160px;
-    background: rgba(255, 255, 255, 0.02) !important;
-    border: 1px solid rgba(255, 255, 255, 0.06) !important;
-    padding: 18px;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s ease;
+    min-width: 180px;
+    background: rgba(10, 10, 18, 0.7) !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+    padding: 20px;
+    border-radius: 0px !important;
+    clip-path: polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%) !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.sentio-stats-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.04));
+    background-size: 100% 4px, 6px 100%;
+    pointer-events: none;
+    z-index: 2;
 }
 
 .sentio-stats-card:hover {
-    border-color: rgba(255, 255, 255, 0.12) !important;
-    background: rgba(255, 255, 255, 0.03) !important;
-    transform: translateY(-2px);
+    border-color: rgba(99, 102, 241, 0.5) !important;
+    background: rgba(99, 102, 241, 0.06) !important;
+    transform: translateY(-3px) scale(1.01);
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.15);
 }
 
 .sentio-stats-label {
+    font-family: 'Outfit', sans-serif !important;
     font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.4);
+    font-weight: 700;
+    color: #818cf8;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
 }
 
 .sentio-stats-value {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-size: 1.8rem;
+    font-weight: 800;
     color: #ffffff;
-    margin: 6px 0;
+    margin: 8px 0;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
 .sentio-stats-desc {
     font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.35);
+    color: rgba(255, 255, 255, 0.4);
 }
 
 .stDownloadButton button {
-    background-color: rgba(99, 102, 241, 0.15) !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(79, 70, 229, 0.4)) !important;
     color: #ffffff !important;
-    border: 1px solid rgba(99, 102, 241, 0.3) !important;
-    border-radius: 8px !important;
-    padding: 10px 20px !important;
-    font-weight: 600 !important;
+    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+    border-radius: 0px !important;
+    clip-path: polygon(0 0, 100% 0, 92% 100%, 0 100%) !important;
+    padding: 12px 24px !important;
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
     transition: all 0.2s ease !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.1) !important;
 }
 
 .stDownloadButton button:hover {
-    background-color: rgba(99, 102, 241, 0.3) !important;
-    transform: scale(1.02);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(79, 70, 229, 0.55)) !important;
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.25) !important;
+    transform: scale(1.03) !important;
 }
 </style>
 """, unsafe_allow_html=True)
