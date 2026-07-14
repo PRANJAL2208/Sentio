@@ -64,14 +64,333 @@ init_session()
 # Hidden text input to sync telemetry JSON from JS component
 st.text_input("telemetry_data", label_visibility="collapsed", key="telemetry_input")
 
-# Hide the telemetry text input via CSS
+# Hide the telemetry text input via CSS and apply premium styling overrides
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+html, body, [data-testid="stAppViewContainer"] {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    background-color: #09090b !important;
+    color: #f4f4f5 !important;
+}
+
+[data-testid="stHeader"] {
+    background-color: transparent !important;
+}
+
+[data-testid="stSidebar"] {
+    background-color: rgba(9, 9, 11, 0.95) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: blur(10px) !important;
+}
+
 div[data-testid="stTextInput"]:has(input[aria-label="telemetry_data"]) {
-    display: none;
+    display: none !important;
+}
+
+/* Restyle tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 8px !important;
+    background-color: rgba(255, 255, 255, 0.02) !important;
+    padding: 6px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.stTabs [data-baseweb="tab"] {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    height: 38px !important;
+    white-space: nowrap !important;
+    border-radius: 8px !important;
+    border: none !important;
+    color: rgba(255, 255, 255, 0.6) !important;
+    background-color: transparent !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    padding: 0 16px !important;
+    transition: all 0.2s ease !important;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    color: #ffffff !important;
+    background-color: rgba(99, 102, 241, 0.15) !important;
+    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+}
+
+.stTabs [role="tabpanel"] {
+    padding-top: 1.5rem !important;
+}
+
+/* Chat Input styling */
+[data-testid="stChatInput"] {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 12px !important;
+}
+
+[data-testid="stChatInput"] textarea {
+    color: #fafafa !important;
+    background: transparent !important;
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+/* Glassmorphic custom styling classes */
+.sentio-chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 2rem;
+}
+
+.sentio-row {
+    display: flex;
+    width: 100%;
+}
+
+.sentio-row-user {
+    justify-content: flex-end;
+}
+
+.sentio-row-tutor {
+    justify-content: flex-start;
+}
+
+.sentio-bubble {
+    max-width: 80%;
+    padding: 16px 20px;
+    border-radius: 16px;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #f4f4f5;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.sentio-bubble-user {
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-bottom-right-radius: 4px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.sentio-bubble-tutor {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-bottom-left-radius: 4px !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+.sentio-glow-overloaded {
+    border: 1px solid rgba(244, 63, 94, 0.35) !important;
+    box-shadow: 0 0 15px rgba(244, 63, 94, 0.08) !important;
+}
+
+.sentio-glow-optimal {
+    border: 1px solid rgba(16, 185, 129, 0.35) !important;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.08) !important;
+}
+
+.sentio-glow-underloaded {
+    border: 1px solid rgba(99, 102, 241, 0.35) !important;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.08) !important;
+}
+
+.sentio-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.sentio-badge-overloaded {
+    background: rgba(244, 63, 94, 0.15) !important;
+    color: #fb7185 !important;
+    border: 1px solid rgba(244, 63, 94, 0.25) !important;
+}
+
+.sentio-badge-optimal {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: #34d399 !important;
+    border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+
+.sentio-badge-underloaded {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #818cf8 !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+}
+
+.sentio-srs-card {
+    background: rgba(245, 158, 11, 0.04) !important;
+    border: 1px solid rgba(245, 158, 11, 0.2) !important;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: #fcd34d;
+}
+
+/* Stats Dashboard widgets */
+.sentio-stats-grid {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.sentio-stats-card {
+    flex: 1;
+    min-width: 160px;
+    background: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+}
+
+.sentio-stats-card:hover {
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    transform: translateY(-2px);
+}
+
+.sentio-stats-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.sentio-stats-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #ffffff;
+    margin: 6px 0;
+}
+
+.sentio-stats-desc {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.stDownloadButton button {
+    background-color: rgba(99, 102, 241, 0.15) !important;
+    color: #ffffff !important;
+    border: 1px solid rgba(99, 102, 241, 0.3) !important;
+    border-radius: 8px !important;
+    padding: 10px 20px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+.stDownloadButton button:hover {
+    background-color: rgba(99, 102, 241, 0.3) !important;
+    transform: scale(1.02);
 }
 </style>
 """, unsafe_allow_html=True)
+
+
+import re
+
+def markdown_to_html(text: str) -> str:
+    # 1. Bold
+    html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+    # 2. Italic
+    html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
+    # 3. Inline code
+    html = re.sub(r'`(.*?)`', r'<code style="background: rgba(255,255,255,0.06); padding: 2px 5px; border-radius: 4px; font-family: monospace;">\1</code>', html)
+    # 4. Fenced code blocks
+    html = re.sub(r'```python(.*?)```', r'<pre style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 8px; font-family: monospace; overflow-x: auto;"><code>\1</code></pre>', html, flags=re.DOTALL)
+    html = re.sub(r'```(.*?)```', r'<pre style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 8px; font-family: monospace; overflow-x: auto;"><code>\1</code></pre>', html, flags=re.DOTALL)
+    # 5. Unordered lists
+    lines = html.split('\n')
+    in_list = False
+    for i, line in enumerate(lines):
+        match = re.match(r'^\s*[\-\*]\s+(.*)', line)
+        if match:
+            item = match.group(1)
+            if not in_list:
+                lines[i] = '<ul><li>' + item + '</li>'
+                in_list = True
+            else:
+                lines[i] = '<li>' + item + '</li>'
+        else:
+            if in_list:
+                lines[i-1] = lines[i-1] + '</ul>'
+                in_list = False
+    if in_list:
+        lines[-1] = lines[-1] + '</ul>'
+        
+    html = '\n'.join(lines)
+    
+    # 6. Newlines to br
+    html = html.replace('\n', '<br/>')
+    return html
+
+
+def render_chat_bubble(role: str, content: str, load_state: str = "OPTIMAL", srs_evaluation: str = "", show_load_badge: bool = True):
+    html_content = markdown_to_html(content)
+    
+    if role == "user":
+        bubble_html = (
+            f'<div class="sentio-row sentio-row-user" style="margin-bottom: 20px; display: flex; justify-content: flex-end; width: 100%;">'
+            f'  <div class="sentio-bubble sentio-bubble-user">'
+            f'    {html_content}'
+            f'  </div>'
+            f'</div>'
+        )
+    else:
+        glow_class = {
+            "OVERLOADED": "sentio-glow-overloaded",
+            "OPTIMAL": "sentio-glow-optimal",
+            "UNDERLOADED": "sentio-glow-underloaded"
+        }.get(load_state, "sentio-glow-optimal")
+        
+        badge_text = {
+            "OVERLOADED": "Simplified",
+            "OPTIMAL": "Normal",
+            "UNDERLOADED": "Enriched"
+        }.get(load_state, "Normal")
+        
+        badge_class = {
+            "OVERLOADED": "sentio-badge-overloaded",
+            "OPTIMAL": "sentio-badge-optimal",
+            "UNDERLOADED": "sentio-badge-underloaded"
+        }.get(load_state, "sentio-badge-optimal")
+        
+        badge_html = f'<div class="sentio-badge {badge_class}">{badge_text}</div>' if show_load_badge else ''
+        
+        eval_html = ''
+        if srs_evaluation:
+            grade_emojis = {"correct": "🎯 Correct!", "partial": "⚠️ Close!", "incorrect": "❌ Not quite."}
+            eval_html = f'<div class="sentio-srs-card"><b>Spaced Repetition Practice:</b> {grade_emojis.get(srs_evaluation, "")}</div>'
+            
+        bubble_html = (
+            f'<div class="sentio-row sentio-row-tutor" style="margin-bottom: 20px; display: flex; justify-content: flex-start; width: 100%;">'
+            f'  <div class="sentio-bubble sentio-bubble-tutor {glow_class}">'
+            f'    {badge_html}'
+            f'    <div>{html_content}</div>'
+            f'    {eval_html}'
+            f'  </div>'
+            f'</div>'
+        )
+        
+    st.markdown(bubble_html, unsafe_allow_html=True)
 
 inject_timing_tracker()
 
@@ -273,16 +592,17 @@ tab_tutor, tab_dashboard = st.tabs(["💬 Sentio Tutor", "📊 Learning Dashboar
 # ── Render Tutor Interface ───────────────────────────────────────────────────
 
 with tab_tutor:
-    # Render existing chat history
+    # Render existing chat history in a custom styled chat container
+    st.markdown('<div class="sentio-chat-container">', unsafe_allow_html=True)
     for turn in st.session_state["chat_history"]:
-        with st.chat_message(turn["role"]):
-            st.markdown(turn["content"])
-            if show_load_badge and turn["role"] == "assistant" and "load_state" in turn:
-                badge = {"OVERLOADED": "🔴 simplified", "OPTIMAL": "🟢 normal", "UNDERLOADED": "🔵 enriched"}
-                st.caption(badge.get(turn["load_state"], ""))
-            if turn["role"] == "assistant" and turn.get("srs_evaluation"):
-                grade_emojis = {"correct": "🎯 Correct!", "partial": "⚠️ Close!", "incorrect": "❌ Not quite."}
-                st.info(f"**Spaced Repetition Practice**: {grade_emojis.get(turn['srs_evaluation'], '')}")
+        render_chat_bubble(
+            role=turn["role"],
+            content=turn["content"],
+            load_state=turn.get("load_state", "OPTIMAL"),
+            srs_evaluation=turn.get("srs_evaluation", ""),
+            show_load_badge=show_load_badge
+        )
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if not st.session_state["chat_history"]:
         st.info(
@@ -302,37 +622,23 @@ if user_input := st.chat_input("Ask me anything..."):
     # 2. Count recent clarifications
     clarification_count = update_clarification_count(st.session_state, user_input)
 
-    # 3. Show user message and query agent inside tutor tab
+    # 3. Query agent inside tutor tab
     with tab_tutor:
-        with st.chat_message("user"):
-            st.markdown(user_input)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                result = run_agent(
-                    compiled_graph=compiled_graph,
-                    user_message=user_input,
-                    pause_seconds=telemetry["pause_seconds"],
-                    chat_history=st.session_state["chat_history"],
-                    memory_collection=memory_collection,
-                    recent_clarification_count=clarification_count,
-                    avg_dwell_ms=telemetry["avg_dwell_ms"],
-                    avg_flight_ms=telemetry["avg_flight_ms"],
-                    backspace_count=telemetry["backspace_count"],
-                    srs_quiz_active=st.session_state["srs_quiz_active"],
-                    srs_topic_id=st.session_state["srs_topic_id"],
-                    turns_since_last_quiz=st.session_state["turns_since_last_quiz"],
-                )
-
-            st.markdown(result["response"])
-
-            if show_load_badge:
-                badge = {
-                    "OVERLOADED":  "🔴 simplified response",
-                    "OPTIMAL":     "🟢 normal response",
-                    "UNDERLOADED": "🔵 enriched response",
-                }
-                st.caption(badge.get(result["load_state"], ""))
+        with st.spinner("Thinking..."):
+            result = run_agent(
+                compiled_graph=compiled_graph,
+                user_message=user_input,
+                pause_seconds=telemetry["pause_seconds"],
+                chat_history=st.session_state["chat_history"],
+                memory_collection=memory_collection,
+                recent_clarification_count=clarification_count,
+                avg_dwell_ms=telemetry["avg_dwell_ms"],
+                avg_flight_ms=telemetry["avg_flight_ms"],
+                backspace_count=telemetry["backspace_count"],
+                srs_quiz_active=st.session_state["srs_quiz_active"],
+                srs_topic_id=st.session_state["srs_topic_id"],
+                turns_since_last_quiz=st.session_state["turns_since_last_quiz"],
+            )
 
     # 4. Update session state
     st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
@@ -380,6 +686,42 @@ if user_input := st.chat_input("Ask me anything..."):
 with tab_dashboard:
     st.markdown("## 📊 Learning Analytics Dashboard")
     st.caption("Track your biometrics, memory retention curves, and concept associations in real-time.")
+
+    # Render custom Stats Grid
+    last_sig = {}
+    if st.session_state["load_state_history"]:
+        last_sig = st.session_state["load_state_history"][-1]["signals"]
+        
+    flight = f"{last_sig.get('avg_flight_ms', 0.0):.0f} ms" if last_sig.get('avg_flight_ms', 0.0) > 0 else "N/A"
+    dwell = f"{last_sig.get('avg_dwell_ms', 0.0):.0f} ms" if last_sig.get('avg_dwell_ms', 0.0) > 0 else "N/A"
+    backspaces = f"{last_sig.get('backspace_count', 0)}" if last_sig.get('backspace_count', 0) > 0 else "0"
+    pause = f"{last_sig.get('pause_seconds', 0.0):.1f} s" if last_sig.get('pause_seconds', 0.0) > 0 else "0.0 s"
+    
+    stats_html = f"""
+    <div class="sentio-stats-grid">
+        <div class="sentio-stats-card">
+            <div class="sentio-stats-label">✈️ Flight Time</div>
+            <div class="sentio-stats-value">{flight}</div>
+            <div class="sentio-stats-desc">Transition delay between keys</div>
+        </div>
+        <div class="sentio-stats-card">
+            <div class="sentio-stats-label">🔏 Dwell Time</div>
+            <div class="sentio-stats-value">{dwell}</div>
+            <div class="sentio-stats-desc">Key hold duration</div>
+        </div>
+        <div class="sentio-stats-card">
+            <div class="sentio-stats-label">⌫ Backspaces</div>
+            <div class="sentio-stats-value">{backspaces}</div>
+            <div class="sentio-stats-desc">Deletions / revisions</div>
+        </div>
+        <div class="sentio-stats-card">
+            <div class="sentio-stats-label">⏳ Reading Pause</div>
+            <div class="sentio-stats-value">{pause}</div>
+            <div class="sentio-stats-desc">Time spent planning input</div>
+        </div>
+    </div>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
 
     # 1. Telemetry trends
     if st.session_state["load_state_history"]:
@@ -453,8 +795,8 @@ with tab_dashboard:
     if all_items["ids"]:
         dot_lines = [
             "digraph G {",
-            '  node [shape=box, style="filled,rounded", color="#e0f2fe", fillcolor="#f0f9ff", fontname="Arial", fontsize=10];',
-            '  edge [color="#cbd5e1", penwidth=1.5];',
+            '  node [shape=box, style="filled,rounded", color="#6366f1", fillcolor="#18181b", fontcolor="#fafafa", fontname="Arial", fontsize=10];',
+            '  edge [color="#4f46e5", penwidth=1.2];',
             '  bgcolor="transparent";',
         ]
 
