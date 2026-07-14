@@ -41,7 +41,13 @@ TIMING_COMPONENT_HTML = """
         try {
             const telemetry = getTelemetry();
             const parentDoc = window.parent.document;
-            const hiddenInput = parentDoc.querySelector('input[aria-label="telemetry_data"]');
+            let hiddenInput = parentDoc.querySelector('input[aria-label="telemetry_data"]');
+            if (!hiddenInput) {
+                hiddenInput = Array.from(parentDoc.querySelectorAll('input')).find(i => 
+                    i.getAttribute('aria-label') === 'telemetry_data' || 
+                    i.id === 'telemetry_data'
+                );
+            }
             if (hiddenInput) {
                 const valStr = JSON.stringify(telemetry);
                 const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
@@ -55,7 +61,9 @@ TIMING_COMPONENT_HTML = """
     }
 
     function attachListeners() {
-        const input = document.querySelector('textarea[data-testid="stChatInputTextArea"]')
+        const parentDoc = window.parent.document;
+        const input = parentDoc.querySelector('textarea[data-testid="stChatInputTextArea"]')
+                   || parentDoc.querySelector('textarea')
                    || document.querySelector('textarea');
 
         if (!input) {
@@ -111,11 +119,20 @@ TIMING_COMPONENT_HTML = """
             }
         });
 
-        // Form submit integration
+        // Form submit integration (Enter key press)
         input.closest('form')?.addEventListener('submit', function() {
             syncTelemetry();
             focusTime = null; // Reset for next turn
         });
+
+        // Click submit button integration (guarantees sync before submit event finishes)
+        const submitBtn = parentDoc.querySelector('button[data-testid="stChatInputSubmitButton"]');
+        if (submitBtn) {
+            submitBtn.addEventListener('mousedown', function() {
+                syncTelemetry();
+                focusTime = null;
+            });
+        }
     }
 
     // Start polling after DOM is ready
