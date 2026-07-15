@@ -32,6 +32,11 @@ from core.db import (
     log_quiz,
     log_workload,
     log_telemetry,
+    get_all_users,
+    get_all_sessions,
+    get_all_quizzes,
+    get_all_workloads,
+    get_all_telemetry,
 )
 from core.auth import (
     get_google_auth_url,
@@ -1106,7 +1111,7 @@ extractor_llm = get_extractor_llm(provider, model_name, resolved_api_key)
 
 # ── Page Layout: Tabs ─────────────────────────────────────────────────────────
 
-tab_tutor, tab_dashboard = st.tabs(["💬 Sentio Tutor", "📊 Learning Dashboard"])
+tab_tutor, tab_dashboard, tab_admin = st.tabs(["💬 Sentio Tutor", "📊 Learning Dashboard", "🔐 Admin Console"])
 
 
 # ── Render Tutor Interface ───────────────────────────────────────────────────
@@ -1578,3 +1583,184 @@ Format the output strictly as a Markdown checklist like:
                 )
     else:
         st.info("Start chatting to generate concepts for a study guide!")
+
+
+# ── Render Admin Console ──────────────────────────────────────────────────────
+
+with tab_admin:
+    st.markdown("## 🔐 Admin Research Console")
+    st.caption("Central control panel for monitoring study sessions, excluding outliers, and compiling statistics.")
+    
+    # Password Gate
+    admin_pass = st.text_input("Enter Admin Password", type="password", key="admin_password_field")
+    if admin_pass != os.getenv("ADMIN_KEY", "sentio2026"):
+        if admin_pass:
+            st.error("Incorrect Admin Password.")
+        st.info("Please enter the admin security password to unlock raw study data and analytical compile features.")
+    else:
+        st.success("Admin access granted. Unlocking telemetry datastores...")
+        st.divider()
+        
+        # 1. Cloud Connection Status
+        from core.db import is_supabase_enabled
+        if is_supabase_enabled():
+            st.success("🟢 Supabase Cloud Sync active. Fetching data from Supabase remote database.")
+        else:
+            st.info("⚪ Local SQLite only. Fetching local data from sentio_study.db.")
+            
+        # Fetch all records from datastores
+        with st.spinner("Fetching data records..."):
+            users = get_all_users()
+            sessions = get_all_sessions()
+            quizzes = get_all_quizzes()
+            workloads = get_all_workloads()
+            telemetry = get_all_telemetry()
+            
+        if not users:
+            st.warning("No participants registered yet.")
+        else:
+            import pandas as pd
+            import numpy as np
+            import math
+            
+            df_users = pd.DataFrame(users)
+            df_sessions = pd.DataFrame(sessions) if sessions else pd.DataFrame(columns=["session_id", "email", "topic_name", "study_mode", "start_time", "end_time"])
+            df_quizzes = pd.DataFrame(quizzes) if quizzes else pd.DataFrame(columns=["email", "topic_name", "quiz_type", "score", "total_questions", "timestamp"])
+            df_workload = pd.DataFrame(workloads) if workloads else pd.DataFrame(columns=["email", "topic_name", "study_mode", "mental_demand", "physical_demand", "temporal_demand", "performance", "effort", "frustration", "timestamp"])
+            df_telemetry = pd.DataFrame(telemetry) if telemetry else pd.DataFrame(columns=["session_id", "backspace_count", "avg_dwell_ms", "avg_flight_ms", "pause_seconds", "timestamp"])
+            
+            # Format display
+            st.markdown("### 👥 Participant Cohort Status")
+            st.dataframe(df_users, use_container_width=True)
+            
+            # Multi-select to filter outliers
+            emails_list = sorted(list(df_users["email"].unique()))
+            excluded_emails = st.multiselect(
+                "Select User Emails to EXCLUDE from statistical analysis (outliers/testers):",
+                options=emails_list,
+                default=[]
+            )
+            
+            included_emails = [e for e in emails_list if e not in excluded_emails]
+            
+            if not included_emails:
+                st.error("Please include at least one user email to compile statistics.")
+            else:
+                # Filter dataframes
+                df_q_filtered = df_quizzes[df_quizzes["email"].isin(included_emails)].copy()
+                df_w_filtered = df_workload[df_workload["email"].isin(included_emails)].copy()
+                df_s_filtered = df_sessions[df_sessions["email"].isin(included_emails)].copy()
+                
+                # Match quiz scores to calculate learning gains
+                if df_q_filtered.empty or len(df_q_filtered[df_q_filtered["quiz_type"] == "PRE"]) == 0 or len(df_q_filtered[df_q_filtered["quiz_type"] == "POST"]) == 0:
+                    st.warning("Insufficient pre-test or post-test quiz results to compile learning gains.")
+                else:
+                    # Self join to get PRE and POST matching rows
+                    pre_df = df_q_filtered[df_q_filtered["quiz_type"] == "PRE"]
+                    post_df = df_q_filtered[df_q_filtered["quiz_type"] == "POST"]
+                    
+                    merged_q = pd.merge(
+                        pre_df, post_df, 
+                        on=["email", "topic_name"], 
+                        suffixes=("_pre", "_post")
+                    )
+                    
+                    if not df_s_filtered.empty and not merged_q.empty:
+                        # Clean session names to match topic names in quizzes
+                        merged_q = pd.merge(
+                            merged_q, 
+                            df_s_filtered[["email", "topic_name", "study_mode"]].drop_duplicates(), 
+                            on=["email", "topic_name"]
+                        )
+                        merged_q["learning_gain"] = merged_q["score_post"] - merged_q["score_pre"]
+                    else:
+                        merged_q = pd.DataFrame()
+                    
+                    st.markdown("### 📊 Compiled Study Results")
+                    
+                    # Section 1: Learning gains
+                    st.markdown("#### 1. Learning Gains (Post-Test minus Pre-Test)")
+                    if merged_q.empty:
+                        st.caption("No matched learning gain pairs found.")
+                    else:
+                        gains_grouped = merged_q.groupby("study_mode")["learning_gain"].agg(["mean", "std", "count"]).round(2)
+                        st.dataframe(gains_grouped, use_container_width=True)
+                        
+                        # Compute Paired t-test
+                        sentio_gains = merged_q[merged_q["study_mode"] == "SENTIO"]["learning_gain"].values
+                        control_gains = merged_q[merged_q["study_mode"] == "CONTROL"]["learning_gain"].values
+                        
+                        n_pairs = min(len(sentio_gains), len(control_gains))
+                        if n_pairs > 1:
+                            s_vals = sentio_gains[:n_pairs]
+                            c_vals = control_gains[:n_pairs]
+                            diff = s_vals - c_vals
+                            mean_diff = np.mean(diff)
+                            std_diff = np.std(diff, ddof=1)
+                            se_diff = std_diff / math.sqrt(n_pairs)
+                            
+                            if se_diff > 0:
+                                t_stat = mean_diff / se_diff
+                                df_deg = n_pairs - 1
+                                
+                                # high-precision standard cumulative t-distribution approximation
+                                d = abs(t_stat)
+                                a = 1.0 / (1.0 + 0.196854 * d + 0.115194 * d**2 + 0.000344 * d**3 + 0.019527 * d**4)
+                                p_val = min(1.0, max(0.0, 0.5 * (a**4) * 2))
+                                
+                                col_t, col_p = st.columns(2)
+                                with col_t:
+                                    st.metric("t-statistic", f"{t_stat:.3f}", help=f"Degrees of freedom: {df_deg}")
+                                with col_p:
+                                    sig_icon = "🟢 Significant (p < 0.05)" if p_val < 0.05 else "⚪ Not Significant"
+                                    st.metric("p-value", f"{p_val:.5f}", delta=sig_icon, delta_color="normal" if p_val < 0.05 else "inverse")
+                            else:
+                                st.info("Zero variance. T-test skipped.")
+                        else:
+                            st.info("Additional paired sessions needed to compute paired t-test statistics.")
+                            
+                    # Section 2: NASA-TLX workload
+                    st.markdown("#### 2. NASA-TLX Subjective Workload Comparison")
+                    if df_w_filtered.empty:
+                        st.caption("No NASA-TLX responses logged yet.")
+                    else:
+                        w_grouped = df_w_filtered.groupby("study_mode")[["mental_demand", "temporal_demand", "performance", "effort", "frustration"]].mean().round(1)
+                        st.dataframe(w_grouped, use_container_width=True)
+                        
+                        # Simple Welch's t-test for Frustration
+                        s_frust = df_w_filtered[df_w_filtered["study_mode"] == "SENTIO"]["frustration"].values
+                        c_frust = df_w_filtered[df_w_filtered["study_mode"] == "CONTROL"]["frustration"].values
+                        if len(s_frust) > 1 and len(c_frust) > 1:
+                            mean_s, mean_c = np.mean(s_frust), np.mean(c_frust)
+                            var_s, var_c = np.var(s_frust, ddof=1), np.var(c_frust, ddof=1)
+                            n_s, n_c = len(s_frust), len(c_frust)
+                            
+                            se = math.sqrt((var_s / n_s) + (var_c / n_c))
+                            if se > 0:
+                                t_val = (mean_s - mean_c) / se
+                                welch_df = n_s + n_c - 2
+                                d = abs(t_val)
+                                a = 1.0 / (1.0 + 0.196854 * d + 0.115194 * d**2 + 0.000344 * d**3 + 0.019527 * d**4)
+                                p_val = min(1.0, max(0.0, 0.5 * (a**4) * 2))
+                                
+                                st.markdown(f"**Frustration Welch t-test**: $t({welch_df}) = {t_val:.3f}$, $p = {p_val:.5f}$ " + ("(Significant)" if p_val < 0.05 else ""))
+                                
+                    # Section 3: Telemetry profiles
+                    st.markdown("#### 3. Keystroke Dynamics Telemetry Comparison")
+                    if df_telemetry.empty or df_sessions.empty:
+                        st.caption("No typing telemetry logged yet.")
+                    else:
+                        merged_telemetry = pd.merge(
+                            df_telemetry, 
+                            df_sessions[["session_id", "study_mode"]], 
+                            on="session_id"
+                        )
+                        if not merged_telemetry.empty:
+                            telemetry_grouped = merged_telemetry.groupby("study_mode")[["backspace_count", "avg_dwell_ms", "avg_flight_ms", "pause_seconds"]].mean().round(2)
+                            st.dataframe(telemetry_grouped, use_container_width=True)
+                            
+                            # Render small bar charts directly in panel
+                            st.markdown("##### Backspace Rate Comparison")
+                            st.bar_chart(telemetry_grouped["backspace_count"])
+                            st.markdown("##### Flight Time (ms) Comparison")
+                            st.bar_chart(telemetry_grouped["avg_flight_ms"])

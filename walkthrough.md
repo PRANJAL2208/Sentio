@@ -41,24 +41,34 @@ We have successfully implemented fine-grained keystroke telemetry monitoring, in
 
 ---
 
-## 2. Verification Results
+## 6. Phase 6: Cloud Persistence & Web Admin Panel (Completed)
 
-### Automated Tests
-* We updated [tests.py](file:///c:/Users/DELL/Desktop/projects/cogniflow/tests.py) to assert telemetry mitigations and explicit override behaviors.
-* Running the test suite shows all **24 assertions pass successfully**:
+We have built a unified web-native compiler interface removing the need to use local CLI commands to analyze results:
+1. **Dynamic Supabase Cloud Replication**: Integrated a REST PostgREST client that automatically mirrors user profiles, study durations, quizzes, and keystroke dynamic metrics to a persistent Supabase PostgreSQL cloud in real-time.
+2. **Secret Admin Console Gate**: Embedded a secure `🔐 Admin Console` tab directly within the browser application unlocked via password validation (stored in secrets/`.env`).
+3. **Outlier Filtering & Checkbox Selection**: Added a dynamic sample selector. Researchers can view registered participants in real-time and check/uncheck emails to isolate outliers or tests.
+4. **Instant Statistical Compiler**: Renders learning gain paired t-tests, Welch's t-tests on NASA-TLX workload demand, and telemetry trends directly inside the web browser.
+
+---
+
+## 7. Verification Results
+
+### Automated Integration & Unit Tests
+* Ran the updated test suite to check database table configurations, counterbalancing algorithms, and JWT decoding logic.
+* All **43 assertions pass successfully**:
   ```
   Sentio — Component Tests
   ============================================================
-  [1] core/load_detector.py
-    ✓  Long pause + short confused message → OVERLOADED
-    ✓  Medium pause + clear question → OPTIMAL
-    ✓  Fast + long engaged message → UNDERLOADED
-    ✓  High transition latency (flight time) → OVERLOADED
-    ✓  High backspace rate (>15%) → OVERLOADED
-    ✓  Fast flight and dwell times → UNDERLOADED
-    ✓  Confident telemetry offsets high reading pause → OPTIMAL
-    ✓  Explicit 'everything' request overrides overload state
-    ...
-    Results: 24 passed, 0 failed
+  ...
+  [7] core/db.py & core/auth.py
+    ✓  WAL database initialized successfully
+    ✓  User registration & group retrieval successful
+    ✓  Database logs (session, telemetry, workload, quizzes) completed
+    ✓  Database quiz record read verification successful
+    ✓  OAuth configuration validator returned boolean
+
+  ============================================================
+    Results: 43 passed, 0 failed
     All tests passed. Ready to run: streamlit run app.py
+  ============================================================
   ```

@@ -8,9 +8,87 @@ NASA-TLX surveys, and typing dynamics without write locks under multi-user traff
 
 import sqlite3
 import os
+import requests
+import streamlit as st
 from datetime import datetime
 
 DB_FILE = "sentio_study.db"
+
+# Retrieve Supabase cloud configs
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+try:
+    if not SUPABASE_URL:
+        SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+    if not SUPABASE_KEY:
+        SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+except Exception:
+    pass
+
+def is_supabase_enabled() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_KEY)
+
+def get_supabase_headers():
+    return {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal"
+    }
+
+def supabase_post(table: str, data: dict):
+    """
+    Synchronously writes a log entry to remote Supabase DB via REST API.
+    Does not raise exceptions so study participants are never blocked on network issues.
+    """
+    if not is_supabase_enabled():
+        return
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{table}"
+    try:
+        payload = {}
+        for k, v in data.items():
+            if isinstance(v, datetime):
+                payload[k] = v.isoformat()
+            else:
+                payload[k] = v
+        requests.post(url, headers=get_supabase_headers(), json=payload, timeout=5.0)
+    except Exception:
+        pass
+
+def supabase_patch(table: str, filters: dict, data: dict):
+    """
+    Sends a PATCH update request to Supabase REST API.
+    """
+    if not is_supabase_enabled():
+        return
+    query_str = "&".join([f"{k}=eq.{v}" for k, v in filters.items()])
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{table}?{query_str}"
+    try:
+        payload = {}
+        for k, v in data.items():
+            if isinstance(v, datetime):
+                payload[k] = v.isoformat()
+            else:
+                payload[k] = v
+        requests.patch(url, headers=get_supabase_headers(), json=payload, timeout=5.0)
+    except Exception:
+        pass
+
+def supabase_get(table: str) -> list:
+    """
+    Fetch all records from the specified Supabase table.
+    """
+    if not is_supabase_enabled():
+        return []
+    url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{table}?select=*"
+    try:
+        res = requests.get(url, headers=get_supabase_headers(), timeout=8.0)
+        if res.status_code == 200:
+            return res.json()
+    except Exception:
+        pass
+    return []
 
 def get_connection():
     """
@@ -117,17 +195,39 @@ def register_user(email: str, group: str):
         conn.commit()
     finally:
         conn.close()
+    
+    # Mirror to Supabase cloud
+    supabase_post("users", {
+        "email": email.lower().strip(),
+        "group_assignment": group,
+        "signup_time": datetime.now()
+    })
 
 def get_user_group(email: str) -> str:
     """
     Retrieve the group assignment for a registered user email.
+    If Supabase is enabled, we check both SQLite and fallback to Supabase check.
     """
+    # 1. Check local db first
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT group_assignment FROM users WHERE email = ?", (email.lower().strip(),))
     row = cursor.fetchone()
     conn.close()
-    return row[0] if row else None
+    
+    if row:
+        return row[0]
+        
+    # 2. Check Supabase cloud database if not found locally
+    if is_supabase_enabled():
+        try:
+            url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/users?email=eq.{email.lower().strip()}&select=group_assignment"
+            res = requests.get(url, headers=get_supabase_headers(), timeout=5.0)
+            if res.status_code == 200 and res.json():
+                return res.json()[0].get("group_assignment")
+        except Exception:
+            pass
+    return None
 
 def log_session_start(session_id: str, email: str, topic_name: str, mode: str):
     """
@@ -142,6 +242,14 @@ def log_session_start(session_id: str, email: str, topic_name: str, mode: str):
         conn.commit()
     finally:
         conn.close()
+        
+    supabase_post("sessions", {
+        "session_id": session_id,
+        "email": email.lower().strip(),
+        "topic_name": topic_name,
+        "study_mode": mode,
+        "start_time": datetime.now()
+    })
 
 def log_session_end(session_id: str):
     """
@@ -156,6 +264,8 @@ def log_session_end(session_id: str):
         conn.commit()
     finally:
         conn.close()
+        
+    supabase_patch("sessions", {"session_id": session_id}, {"end_time": datetime.now()})
 
 def log_quiz(email: str, topic_name: str, quiz_type: str, score: int, total: int):
     """
@@ -170,10 +280,19 @@ def log_quiz(email: str, topic_name: str, quiz_type: str, score: int, total: int
         conn.commit()
     finally:
         conn.close()
+        
+    supabase_post("quiz_records", {
+        "email": email.lower().strip(),
+        "topic_name": topic_name,
+        "quiz_type": quiz_type.upper().strip(),
+        "score": score,
+        "total_questions": total,
+        "timestamp": datetime.now()
+    })
 
 def log_workload(email: str, topic_name: str, mode: str, ratings: dict):
     """
-    Write a 6-item NASA-TLX survey response to database.
+    Write a 6-item NASA-TLX workload survey response to database.
     """
     conn = get_connection()
     try:
@@ -199,6 +318,19 @@ def log_workload(email: str, topic_name: str, mode: str, ratings: dict):
         conn.commit()
     finally:
         conn.close()
+        
+    supabase_post("workload_records", {
+        "email": email.lower().strip(),
+        "topic_name": topic_name,
+        "study_mode": mode,
+        "mental_demand": ratings.get("mental_demand", 0),
+        "physical_demand": ratings.get("physical_demand", 0),
+        "temporal_demand": ratings.get("temporal_demand", 0),
+        "performance": ratings.get("performance", 0),
+        "effort": ratings.get("effort", 0),
+        "frustration": ratings.get("frustration", 0),
+        "timestamp": datetime.now()
+    })
 
 def log_telemetry(session_id: str, telemetry: dict):
     """
@@ -224,3 +356,84 @@ def log_telemetry(session_id: str, telemetry: dict):
         conn.commit()
     finally:
         conn.close()
+        
+    supabase_post("telemetry_records", {
+        "session_id": session_id,
+        "backspace_count": telemetry.get("backspace_count", 0),
+        "avg_dwell_ms": telemetry.get("avg_dwell_ms", 0.0),
+        "avg_flight_ms": telemetry.get("avg_flight_ms", 0.0),
+        "pause_seconds": telemetry.get("pause_seconds", 0.0),
+        "timestamp": datetime.now()
+    })
+
+def get_all_users() -> list:
+    """
+    Returns all registered user records as a list of dicts.
+    """
+    if is_supabase_enabled():
+        return supabase_get("users")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT email, group_assignment, signup_time FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"email": r[0], "group_assignment": r[1], "signup_time": r[2]} for r in rows]
+
+def get_all_sessions() -> list:
+    """
+    Returns all study sessions as a list of dicts.
+    """
+    if is_supabase_enabled():
+        return supabase_get("sessions")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT session_id, email, topic_name, study_mode, start_time, end_time FROM sessions")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"session_id": r[0], "email": r[1], "topic_name": r[2], "study_mode": r[3], "start_time": r[4], "end_time": r[5]} for r in rows]
+
+def get_all_quizzes() -> list:
+    """
+    Returns all pre-test and post-test quiz results as a list of dicts.
+    """
+    if is_supabase_enabled():
+        return supabase_get("quiz_records")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT email, topic_name, quiz_type, score, total_questions, timestamp FROM quiz_records")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"email": r[0], "topic_name": r[1], "quiz_type": r[2], "score": r[3], "total_questions": r[4], "timestamp": r[5]} for r in rows]
+
+def get_all_workloads() -> list:
+    """
+    Returns all NASA-TLX workload records as a list of dicts.
+    """
+    if is_supabase_enabled():
+        return supabase_get("workload_records")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT email, topic_name, study_mode, mental_demand, physical_demand, temporal_demand, performance, effort, frustration, timestamp FROM workload_records")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        "email": r[0], "topic_name": r[1], "study_mode": r[2],
+        "mental_demand": r[3], "physical_demand": r[4], "temporal_demand": r[5],
+        "performance": r[6], "effort": r[7], "frustration": r[8], "timestamp": r[9]
+    } for r in rows]
+
+def get_all_telemetry() -> list:
+    """
+    Returns all keystroke timing telemetry entries as a list of dicts.
+    """
+    if is_supabase_enabled():
+        return supabase_get("telemetry_records")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT session_id, backspace_count, avg_dwell_ms, avg_flight_ms, pause_seconds, timestamp FROM telemetry_records")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{
+        "session_id": r[0], "backspace_count": r[1], "avg_dwell_ms": r[2],
+        "avg_flight_ms": r[3], "pause_seconds": r[4], "timestamp": r[5]
+    } for r in rows]
