@@ -320,6 +320,18 @@ from core.auth import is_google_auth_configured
 try:
     # 1. Database initialization check
     init_database()
+    
+    # Clean previous test entries to ensure clean run
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM telemetry_records WHERE session_id = 'test_session_99'")
+    c.execute("DELETE FROM workload_records WHERE email = 'tester@sentio.org'")
+    c.execute("DELETE FROM quiz_records WHERE email = 'tester@sentio.org'")
+    c.execute("DELETE FROM sessions WHERE session_id = 'test_session_99'")
+    c.execute("DELETE FROM users WHERE email = 'tester@sentio.org'")
+    conn.commit()
+    conn.close()
+    
     test("WAL database initialized successfully", True)
 
     # 2. User registration check
@@ -360,6 +372,21 @@ try:
     c.execute("SELECT score FROM quiz_records WHERE email = 'tester@sentio.org' AND quiz_type = 'POST'")
     quiz_val = c.fetchone()[0]
     test("Database quiz record read verification successful", quiz_val == 3, f"got {quiz_val}")
+    # 7. Unified Cloud/Local Datastore Fetchers check (New in Phase 6)
+    from core.db import get_all_users, get_all_sessions, get_all_quizzes, get_all_workloads, get_all_telemetry
+    
+    all_users = get_all_users()
+    all_sessions = get_all_sessions()
+    all_quizzes = get_all_quizzes()
+    all_workloads = get_all_workloads()
+    all_telemetry = get_all_telemetry()
+    
+    test("get_all_users returns registered list", any(u["email"] == "tester@sentio.org" for u in all_users))
+    test("get_all_sessions returns active sessions", any(s["session_id"] == "test_session_99" for s in all_sessions))
+    test("get_all_quizzes returns PRE/POST scores", any(q["email"] == "tester@sentio.org" and q["quiz_type"] == "POST" for q in all_quizzes))
+    test("get_all_workloads returns NASA-TLX ratings", any(w["email"] == "tester@sentio.org" and w["frustration"] == 10 for w in all_workloads))
+    test("get_all_telemetry returns keystroke telemetry list", any(t["session_id"] == "test_session_99" for t in all_telemetry))
+
     conn.close()
 
 except Exception as e:
