@@ -4,3 +4,4 @@ __pycache__/
 .env
 sentio_memory/
 *.sqlite3
+*.db

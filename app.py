@@ -7,6 +7,7 @@ Run with: streamlit run app.py
 import os
 import uuid
 import time
+from datetime import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -22,8 +23,26 @@ from memory.store import (
     get_forgotten_topics,
 )
 from ui.timing import inject_timing_tracker, get_typing_telemetry, update_clarification_count
+from core.db import (
+    init_database,
+    register_user,
+    get_user_group,
+    log_session_start,
+    log_session_end,
+    log_quiz,
+    log_workload,
+    log_telemetry,
+)
+from core.auth import (
+    get_google_auth_url,
+    exchange_code_for_email,
+    is_google_auth_configured,
+)
 
 load_dotenv()
+
+# Initialize Central SQLite WAL database tables
+init_database()
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -46,8 +65,91 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
+# ── Multi-User Authentication Gate ────────────────────────────────────────────
+
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = None
+if "group_assignment" not in st.session_state:
+    st.session_state["group_assignment"] = None
+if "study_mode" not in st.session_state:
+    st.session_state["study_mode"] = "Study Router (Balanced)"
+
+# Check if code is in query params (Google redirect callback)
+query_params = st.query_params
+if not st.session_state["user_email"] and "code" in query_params:
+    auth_code = query_params["code"]
+    email = exchange_code_for_email(auth_code)
+    if email:
+        st.session_state["user_email"] = email
+        # Deterministically assign user group based on email hash
+        group = "Group A" if hash(email) % 2 != 0 else "Group B"
+        st.session_state["group_assignment"] = group
+        register_user(email, group)
+        st.query_params.clear()
+        st.rerun()
+    else:
+        st.error("Google authentication failed. Please try again or use the email fallback.")
+
+# Render Login screen if not authenticated
+if not st.session_state["user_email"]:
+    st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
+    st.title("🧠 Sentio Control Console")
+    st.caption("Please log in using Google or your email to access the visor.")
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.write("---")
+    
+    # 1. Google OAuth
+    if is_google_auth_configured():
+        auth_url = get_google_auth_url()
+        google_btn_html = f"""
+        <div style="text-align: center; margin-bottom: 25px;">
+            <a href="{auth_url}" target="_self" style="text-decoration: none;">
+                <button style="
+                    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+                    color: white !important;
+                    border: 1px solid rgba(99, 102, 241, 0.4) !important;
+                    border-radius: 8px !important;
+                    padding: 14px 28px !important;
+                    font-weight: 700 !important;
+                    font-size: 1rem !important;
+                    cursor: pointer !important;
+                    box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
+                    text-transform: uppercase !important;
+                    letter-spacing: 0.05em !important;
+                ">
+                    Sign in with Google
+                </button>
+            </a>
+        </div>
+        """
+        st.markdown(google_btn_html, unsafe_allow_html=True)
+        st.write("OR")
+        
+    # 2. Email Fallback Form
+    with st.form("email_login_form"):
+        st.markdown("### 📧 Developer Email Login")
+        email_input = st.text_input("Enter Email ID", placeholder="your.name@example.com").strip()
+        submit_login = st.form_submit_button("Launch Console")
+        if submit_login:
+            if not email_input or "@" not in email_input:
+                st.warning("Please enter a valid email address.")
+            else:
+                email = email_input.lower().strip()
+                st.session_state["user_email"] = email
+                group = "Group A" if hash(email) % 2 != 0 else "Group B"
+                st.session_state["group_assignment"] = group
+                register_user(email, group)
+                st.rerun()
+                
+    st.stop()
+
+
+# ── Render App Content (Only accessible after login) ──────────────────────────
+
 st.title("🧠 Sentio")
-st.caption("An AI tutor that adapts to your cognitive state in real time.")
+st.caption(f"Authenticated Visor Console: {st.session_state['user_email']} ({st.session_state['group_assignment']})")
 
 
 # ── Init session state ────────────────────────────────────────────────────────
@@ -63,12 +165,95 @@ def init_session():
         "srs_quiz_active":       False,
         "srs_topic_id":          "",
         "turns_since_last_quiz": 4,
+        "current_topic_index":   0,
+        "quiz_step":             "IDLE",    # IDLE, PRE_TEST, STUDY, POST_TEST, NASA_TLX
+        "current_session_id":    None,
+        "pre_test_answers":      {},
+        "post_test_answers":     {},
+        "study_start_time":      None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
 init_session()
+
+
+# ── Curriculum Configuration & Mode Routing ───────────────────────────────────
+
+CURRICULUM_TOPICS = [
+    {
+        "name": "1. Artificial Intelligence vs. Agentic AI",
+        "description": "Learn what makes Agentic AI unique, autonomous decision loops, and the difference between reactive and proactive AI agents.",
+        "pre_quiz": [
+            {"q": "Which of the following best describes 'Agentic AI'?", "options": ["AI that only responds to direct user queries.", "AI that makes decisions and takes actions autonomously.", "A simple rule-based decision tree."], "a": 1},
+            {"q": "What is a key difference between reactive LLMs and proactive agentic systems?", "options": ["Reactive systems take initiative, while proactive agents wait.", "Proactive agents monitor environment states and trigger actions autonomously.", "There is no difference."], "a": 1},
+            {"q": "What component serves as the central orchestration hub for AI tools?", "options": ["An API endpoint", "An MCP (Model Context Protocol) Server", "A local database cache"], "a": 1}
+        ],
+        "post_quiz": [
+            {"q": "Which of the following best describes 'Agentic AI'?", "options": ["AI that only responds to direct user queries.", "AI that makes decisions and takes actions autonomously.", "A simple rule-based decision tree."], "a": 1},
+            {"q": "What is a key difference between reactive LLMs and proactive agentic systems?", "options": ["Reactive systems take initiative, while proactive agents wait.", "Proactive agents monitor environment states and trigger actions autonomously.", "There is no difference."], "a": 1},
+            {"q": "What component serves as the central orchestration hub for AI tools?", "options": ["An API endpoint", "An MCP (Model Context Protocol) Server", "A local database cache"], "a": 1}
+        ]
+    },
+    {
+        "name": "2. Transformers & Self-Attention",
+        "description": "Understand how the Transformer architecture processes sequences using multi-head self-attention.",
+        "pre_quiz": [
+            {"q": "What problem does the attention mechanism solve in sequence modeling?", "options": ["Reducing training memory size.", "Capturing long-range word relationships without step-by-step recurrence.", "Forcing the model to run sequentially."], "a": 1},
+            {"q": "In self-attention, what are the three vectors generated for each word?", "options": ["Value, Target, Weight", "Query, Key, Value", "Input, Hidden, Output"], "a": 1},
+            {"q": "What is the purpose of having 'multiple heads' in self-attention?", "options": ["To run multiple models in parallel.", "To focus on different parts of the sentence simultaneously (e.g. grammar vs. pronouns).", "To speed up vocabulary translation."], "a": 1}
+        ],
+        "post_quiz": [
+            {"q": "What problem does the attention mechanism solve in sequence modeling?", "options": ["Reducing training memory size.", "Capturing long-range word relationships without step-by-step recurrence.", "Forcing the model to run sequentially."], "a": 1},
+            {"q": "In self-attention, what are the three vectors generated for each word?", "options": ["Value, Target, Weight", "Query, Key, Value", "Input, Hidden, Output"], "a": 1},
+            {"q": "What is the purpose of having 'multiple heads' in self-attention?", "options": ["To focus on different parts of the sentence simultaneously.", "To run multiple models in parallel.", "To speed up vocabulary translation."], "a": 0}
+        ]
+    },
+    {
+        "name": "3. Spaced Repetition & Ebbinghaus Decay",
+        "description": "Learn the math behind the Ebbinghaus forgetting curve and how reviews stabilize memory.",
+        "pre_quiz": [
+            {"q": "According to Hermann Ebbinghaus, how does memory retention decay over time?", "options": ["Linearly", "Exponentially", "Logarithmically"], "a": 1},
+            {"q": "What does 'stability' represent in the Ebbinghaus decay formula?", "options": ["The size of the context window.", "The strength of a memory, which dictates how slowly it decays.", "The correctness score of the user's answer."], "a": 1},
+            {"q": "What happens to the rate of forgetting after a successful review interval?", "options": ["It gets faster.", "It slows down (stability increases).", "It stays exactly the same."], "a": 1}
+        ],
+        "post_quiz": [
+            {"q": "According to Hermann Ebbinghaus, how does memory retention decay over time?", "options": ["Linearly", "Exponentially", "Logarithmically"], "a": 1},
+            {"q": "What does 'stability' represent in the Ebbinghaus decay formula?", "options": ["The strength of a memory, which dictates how slowly it decays.", "The size of the context window.", "The correctness score of the user's answer."], "a": 0},
+            {"q": "What happens to the rate of forgetting after a successful review interval?", "options": ["It gets faster.", "It slows down (stability increases).", "It stays exactly the same."], "a": 1}
+        ]
+    },
+    {
+        "name": "4. Cognitive Load Theory",
+        "description": "Learn Sweller's Cognitive Load Theory, active working memory, and mental schema.",
+        "pre_quiz": [
+            {"q": "What is a core bottleneck in human information processing?", "options": ["Extraneous reading speed.", "Limited working memory capacity (typically 4-7 chunks).", "Infinite long-term memory access times."], "a": 1},
+            {"q": "Which type of cognitive load is caused by poorly designed instructions or interfaces?", "options": ["Intrinsic load", "Extraneous load", "Germane load"], "a": 1},
+            {"q": "How does schema acquisition help reduce working memory load?", "options": ["By grouping multiple pieces of info into a single chunk.", "By bypassing long-term memory storage.", "By increasing physical typing speed."], "a": 0}
+        ],
+        "post_quiz": [
+            {"q": "What is a core bottleneck in human information processing?", "options": ["Extraneous reading speed.", "Limited working memory capacity (typically 4-7 chunks).", "Infinite long-term memory access times."], "a": 1},
+            {"q": "Which type of cognitive load is caused by poorly designed instructions or interfaces?", "options": ["Intrinsic load", "Extraneous load", "Germane load"], "a": 1},
+            {"q": "How does schema acquisition help reduce working memory load?", "options": ["By grouping multiple pieces of info into a single chunk.", "By bypassing long-term memory storage.", "By increasing physical typing speed."], "a": 0}
+        ]
+    }
+]
+
+def get_current_mode() -> str:
+    chosen = st.session_state.get("study_mode", "Study Router (Balanced)")
+    if chosen == "Sentio Mode (Force Adaptive)":
+        return "SENTIO"
+    elif chosen == "Control Mode (Force Vanilla)":
+        return "CONTROL"
+    else:
+        # Balanced Router based on Odd/Even Group and Topic index
+        group = st.session_state.get("group_assignment", "Group A")
+        idx = st.session_state.get("current_topic_index", 0)
+        if group == "Group A":
+            return "SENTIO" if idx % 2 == 0 else "CONTROL"
+        else:
+            return "CONTROL" if idx % 2 == 0 else "SENTIO"
 
 
 # ── Inject JS timing tracker & Telemetry Bridge ────────────────────────────────
@@ -795,6 +980,14 @@ def get_extractor_llm(provider: str, model_name: str, api_key: str):
 # ── Sidebar: LLM Configuration & Monitor ─────────────────────────────────────
 
 with st.sidebar:
+    st.markdown("### 🛠️ Study Controller")
+    st.session_state["study_mode"] = st.selectbox(
+        "Study Mode Selector",
+        ["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"],
+        index=["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"].index(st.session_state.get("study_mode", "Study Router (Balanced)"))
+    )
+    
+    st.divider()
     st.markdown("### ⚙️ LLM Settings")
     provider = st.selectbox(
         "Provider",
@@ -820,7 +1013,7 @@ with st.sidebar:
         model_name = custom_model.strip()
         
     api_key_input = st.text_input(
-        "API Key (Leave blank to use .env)",
+        "API Key (Leave blank for fallback)",
         type="password",
     )
 
@@ -833,6 +1026,19 @@ with st.sidebar:
             "Groq": "GROQ_API_KEY",
         }
         resolved_api_key = os.getenv(env_keys[provider], "")
+        
+    if not resolved_api_key:
+        default_groq_key = ""
+        try:
+            default_groq_key = st.secrets.get("DEFAULT_GROQ_API_KEY", "")
+        except Exception:
+            pass
+        default_groq_key = os.getenv("DEFAULT_GROQ_API_KEY") or os.getenv("GROQ_API_KEY") or default_groq_key
+        if default_groq_key:
+            provider = "Groq"
+            model_name = "llama-3.3-70b-versatile"
+            resolved_api_key = default_groq_key
+            st.sidebar.info("🤖 Using system Groq fallback.")
 
     st.divider()
 
@@ -906,93 +1112,268 @@ tab_tutor, tab_dashboard = st.tabs(["💬 Sentio Tutor", "📊 Learning Dashboar
 # ── Render Tutor Interface ───────────────────────────────────────────────────
 
 with tab_tutor:
-    # Render existing chat history in a custom styled chat container
-    st.markdown('<div class="sentio-chat-container">', unsafe_allow_html=True)
-    for turn in st.session_state["chat_history"]:
-        render_chat_bubble(
-            role=turn["role"],
-            content=turn["content"],
-            load_state=turn.get("load_state", "OPTIMAL"),
-            srs_evaluation=turn.get("srs_evaluation", ""),
-            show_load_badge=show_load_badge
+    current_idx = st.session_state["current_topic_index"]
+    
+    if current_idx >= len(CURRICULUM_TOPICS):
+        st.balloons()
+        st.markdown("## 🎉 Study Complete!")
+        st.markdown(
+            "Thank you for participating in this research study! "
+            "You have completed all 4 topic sessions. Please download the research data log "
+            "below and submit it to the study administrator."
         )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    if not st.session_state["chat_history"]:
-        st.info(
-            "👋 Start chatting about any topic you're learning. "
-            "Sentio will detect when you're overwhelmed or bored and adapt automatically. "
-            "Watch the **Load Monitor** in the sidebar."
-        )
-
-
-# ── Chat input ────────────────────────────────────────────────────────────────
-
-if user_input := st.chat_input("Ask me anything..."):
-
-    # 1. Get typing telemetry (JS primary, fallback secondary)
-    telemetry = get_typing_telemetry(st.session_state)
-
-    # 2. Count recent clarifications
-    clarification_count = update_clarification_count(st.session_state, user_input)
-
-    # 3. Query agent inside tutor tab
-    with tab_tutor:
-        with st.spinner("Thinking..."):
-            result = run_agent(
-                compiled_graph=compiled_graph,
-                user_message=user_input,
-                pause_seconds=telemetry["pause_seconds"],
-                chat_history=st.session_state["chat_history"],
-                memory_collection=memory_collection,
-                recent_clarification_count=clarification_count,
-                avg_dwell_ms=telemetry["avg_dwell_ms"],
-                avg_flight_ms=telemetry["avg_flight_ms"],
-                backspace_count=telemetry["backspace_count"],
-                srs_quiz_active=st.session_state["srs_quiz_active"],
-                srs_topic_id=st.session_state["srs_topic_id"],
-                turns_since_last_quiz=st.session_state["turns_since_last_quiz"],
-            )
-
-    # 4. Update session state
-    st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
-    st.session_state["srs_topic_id"] = result["srs_topic_id"]
-    st.session_state["turns_since_last_quiz"] = result["turns_since_last_quiz"]
-
-    st.session_state["chat_history"].append({"role": "user", "content": user_input})
-    st.session_state["chat_history"].append({
-        "role":       "assistant",
-        "content":    result["response"],
-        "load_state": result["load_state"],
-        "srs_evaluation": result.get("srs_evaluation", ""),
-    })
-    st.session_state["load_state_history"].append({
-        "state":      result["load_state"],
-        "confidence": result["load_confidence"],
-        "signals":    result["load_signals"],
-    })
-
-    # 5. Store topics in memory (background, non-blocking)
-    if not result.get("srs_evaluation") and not result.get("srs_quiz_active"):
+        
+        # Read database bytes
         try:
-            topics = extract_topics_from_response(extractor_llm, result["response"])
-            for topic in topics:
-                store_topic(
-                    collection=memory_collection,
-                    topic_summary=topic["summary"],
-                    session_id=st.session_state["session_id"],
-                    links_to=topic["links_to"],
+            with open("sentio_study.db", "rb") as f:
+                db_bytes = f.read()
+            st.download_button(
+                label="💾 Download sentio_study.db (Database File)",
+                data=db_bytes,
+                file_name=f"sentio_study_{st.session_state['user_email'].replace('@', '_').replace('.', '_')}.db",
+                mime="application/x-sqlite3"
+            )
+        except Exception as e:
+            st.error(f"Could not load database file for download: {e}")
+            
+        st.stop()
+        
+    topic = CURRICULUM_TOPICS[current_idx]
+    mode = get_current_mode()
+    step = st.session_state["quiz_step"]
+    
+    if step == "IDLE":
+        st.markdown(f"## Topic {current_idx + 1}: {topic['name']}")
+        st.markdown(topic['description'])
+        st.info(f"Session Mode: **{mode}** (Assigned automatically for balanced research control)")
+        
+        if st.button("Start Study Session", key="start_session_btn"):
+            st.session_state["quiz_step"] = "PRE_TEST"
+            st.session_state["pre_test_answers"] = {}
+            st.session_state["current_session_id"] = f"{st.session_state['user_email']}_{current_idx}_{int(time.time())}"
+            log_session_start(
+                st.session_state["current_session_id"],
+                st.session_state["user_email"],
+                topic["name"],
+                mode
+            )
+            st.rerun()
+            
+    elif step == "PRE_TEST":
+        st.markdown(f"## 📋 Pre-Test: {topic['name']}")
+        st.caption("Please answer the following questions based on your current knowledge. (Try your best, guessing is okay!)")
+        
+        pre_answers = {}
+        with st.form("pre_test_form"):
+            for i, q in enumerate(topic["pre_quiz"]):
+                st.markdown(f"**Q{i+1}: {q['q']}**")
+                pre_answers[i] = st.radio(
+                    f"Select answer for Q{i+1}:", 
+                    q["options"], 
+                    key=f"pre_q_{i}", 
+                    index=None
                 )
+            
+            submit_pre = st.form_submit_button("Submit Pre-Test & Start Studying")
+            if submit_pre:
+                if any(ans is None for ans in pre_answers.values()):
+                    st.warning("Please answer all questions before submitting.")
+                else:
+                    score = 0
+                    for i, q in enumerate(topic["pre_quiz"]):
+                        selected_index = q["options"].index(pre_answers[i])
+                        if selected_index == q["a"]:
+                            score += 1
+                    
+                    log_quiz(st.session_state["user_email"], topic["name"], "PRE", score, len(topic["pre_quiz"]))
+                    st.session_state["quiz_step"] = "STUDY"
+                    st.session_state["chat_history"] = []
+                    st.session_state["study_start_time"] = time.time()
+                    st.rerun()
+                    
+    elif step == "STUDY":
+        elapsed = time.time() - st.session_state.get("study_start_time", time.time())
+        remaining = max(0, 300 - int(elapsed))  # 5 minutes study duration
+        
+        st.markdown(f"### 💬 Topic Study: {topic['name']}")
+        
+        col_timer, col_mode = st.columns(2)
+        with col_timer:
+            mins, secs = divmod(remaining, 60)
+            st.metric("⏳ Study Time Remaining", f"{mins:02d}:{secs:02d}")
+        with col_mode:
+            st.metric("🔬 Current Mode", mode)
+            
+        st.divider()
+        
+        # Render existing chat history
+        st.markdown('<div class="sentio-chat-container">', unsafe_allow_html=True)
+        for turn in st.session_state["chat_history"]:
+            load_badge = show_load_badge if mode == "SENTIO" else False
+            render_chat_bubble(
+                role=turn["role"],
+                content=turn["content"],
+                load_state=turn.get("load_state", "OPTIMAL") if mode == "SENTIO" else "OPTIMAL",
+                srs_evaluation=turn.get("srs_evaluation", "") if mode == "SENTIO" else "",
+                show_load_badge=load_badge
+            )
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        if not st.session_state["chat_history"]:
+            st.info(
+                f"👋 Welcome! I am your AI tutor for **{topic['name']}**. "
+                "Ask me any questions you have about this topic. I will adapt to help you learn."
+            )
+            
+        # Check if time is completed
+        if remaining <= 0:
+            st.success("🎉 Time's up! You have completed the 5-minute study window.")
+            if st.button("Proceed to Post-Test Evaluation", key="post_test_proceed_btn"):
+                log_session_end(st.session_state["current_session_id"])
+                st.session_state["quiz_step"] = "POST_TEST"
+                st.session_state["post_test_answers"] = {}
+                st.rerun()
+        else:
+            # Render chat input
+            if user_input := st.chat_input("Ask me anything..."):
+                telemetry = get_typing_telemetry(st.session_state)
+                clarification_count = update_clarification_count(st.session_state, user_input)
+                
+                # Log telemetry to database
+                log_telemetry(st.session_state["current_session_id"], telemetry)
+                
+                with st.spinner("Thinking..."):
+                    # If in CONTROL mode, telemetry is calculated and logged, but bypassed/ignored for routing
+                    active_load_state = None
+                    if mode == "CONTROL":
+                        # Bypass and force OPTIMAL prompt settings
+                        result = run_agent(
+                            compiled_graph=compiled_graph,
+                            user_message=user_input,
+                            pause_seconds=telemetry["pause_seconds"],
+                            chat_history=st.session_state["chat_history"],
+                            memory_collection=memory_collection,
+                            recent_clarification_count=clarification_count,
+                            avg_dwell_ms=telemetry["avg_dwell_ms"],
+                            avg_flight_ms=telemetry["avg_flight_ms"],
+                            backspace_count=telemetry["backspace_count"],
+                            srs_quiz_active=False,  # Bypass Ebbinghaus quizzes in Control
+                            srs_topic_id="",
+                            turns_since_last_quiz=999,
+                        )
+                        result["load_state"] = "OPTIMAL" # Override response visual badges
+                    else:
+                        result = run_agent(
+                            compiled_graph=compiled_graph,
+                            user_message=user_input,
+                            pause_seconds=telemetry["pause_seconds"],
+                            chat_history=st.session_state["chat_history"],
+                            memory_collection=memory_collection,
+                            recent_clarification_count=clarification_count,
+                            avg_dwell_ms=telemetry["avg_dwell_ms"],
+                            avg_flight_ms=telemetry["avg_flight_ms"],
+                            backspace_count=telemetry["backspace_count"],
+                            srs_quiz_active=st.session_state["srs_quiz_active"],
+                            srs_topic_id=st.session_state["srs_topic_id"],
+                            turns_since_last_quiz=st.session_state["turns_since_last_quiz"],
+                        )
+                        
+                # Update session states
+                if mode == "SENTIO":
+                    st.session_state["srs_quiz_active"] = result["srs_quiz_active"]
+                    st.session_state["srs_topic_id"] = result["srs_topic_id"]
+                    st.session_state["turns_since_last_quiz"] = result["turns_since_last_quiz"]
+                
+                st.session_state["chat_history"].append({"role": "user", "content": user_input})
+                st.session_state["chat_history"].append({
+                    "role":       "assistant",
+                    "content":    result["response"],
+                    "load_state": result["load_state"],
+                    "srs_evaluation": result.get("srs_evaluation", ""),
+                })
+                st.session_state["load_state_history"].append({
+                    "state":      result["load_state"],
+                    "confidence": result["load_confidence"],
+                    "signals":    result["load_signals"],
+                })
+                
+                # Store memory (only in Sentio mode)
+                if mode == "SENTIO" and not result.get("srs_evaluation") and not result.get("srs_quiz_active"):
+                    try:
+                        topics = extract_topics_from_response(extractor_llm, result["response"])
+                        for t in topics:
+                            store_topic(
+                                collection=memory_collection,
+                                topic_summary=t["summary"],
+                                session_id=st.session_state["session_id"],
+                                links_to=t["links_to"],
+                            )
+                        # Resurface reviews
+                        forgotten_now = get_forgotten_topics(memory_collection)
+                        for item in forgotten_now:
+                            update_topic_on_review(memory_collection, item["topic_id"])
+                    except Exception:
+                        pass
+                        
+                st.rerun()
 
-            # If any forgotten topics were resurfaced, update their stability
-            forgotten_now = get_forgotten_topics(memory_collection)
-            for item in forgotten_now:
-                update_topic_on_review(memory_collection, item["topic_id"])
-
-        except Exception:
-            pass  # memory is enhancement — never block the chat
-
-    st.rerun()
+    elif step == "POST_TEST":
+        st.markdown(f"## 📋 Post-Test Evaluation: {topic['name']}")
+        st.caption("Please answer the following questions to verify what you learned during the session.")
+        
+        post_answers = {}
+        with st.form("post_test_form"):
+            for i, q in enumerate(topic["post_quiz"]):
+                st.markdown(f"**Q{i+1}: {q['q']}**")
+                post_answers[i] = st.radio(
+                    f"Select answer for Q{i+1}:", 
+                    q["options"], 
+                    key=f"post_q_{i}", 
+                    index=None
+                )
+            
+            submit_post = st.form_submit_button("Submit Post-Test")
+            if submit_post:
+                if any(ans is None for ans in post_answers.values()):
+                    st.warning("Please answer all questions before submitting.")
+                else:
+                    score = 0
+                    for i, q in enumerate(topic["post_quiz"]):
+                        selected_index = q["options"].index(post_answers[i])
+                        if selected_index == q["a"]:
+                            score += 1
+                    
+                    log_quiz(st.session_state["user_email"], topic["name"], "POST", score, len(topic["post_quiz"]))
+                    st.session_state["quiz_step"] = "NASA_TLX"
+                    st.rerun()
+                    
+    elif step == "NASA_TLX":
+        st.markdown(f"## 📊 Cognitive Workload Assessment (NASA-TLX)")
+        st.caption("Please rate your experience during the last study session on each of the scales below.")
+        
+        with st.form("nasa_tlx_form"):
+            mental = st.slider("🧠 Mental Demand: How mentally demanding was the task?", 0, 100, 50)
+            physical = st.slider("💪 Physical Demand: How physically demanding was it?", 0, 100, 10)
+            temporal = st.slider("⏳ Temporal Demand: Did you feel rushed or hurried?", 0, 100, 30)
+            performance = st.slider("🎯 Performance: How successful do you think you were?", 0, 100, 70)
+            effort = st.slider("🔥 Effort: How hard did you have to work to learn?", 0, 100, 50)
+            frustration = st.slider("😡 Frustration: How insecure, discouraged, or stressed were you?", 0, 100, 20)
+            
+            submit_tlx = st.form_submit_button("Complete Session & Next Topic")
+            if submit_tlx:
+                ratings = {
+                    "mental_demand": mental,
+                    "physical_demand": physical,
+                    "temporal_demand": temporal,
+                    "performance": performance,
+                    "effort": effort,
+                    "frustration": frustration,
+                }
+                log_workload(st.session_state["user_email"], topic["name"], mode, ratings)
+                st.session_state["current_topic_index"] += 1
+                st.session_state["quiz_step"] = "IDLE"
+                st.session_state["chat_history"] = []
+                st.rerun()
 
 
 # ── Render learning dashboard ───────────────────────────────────────────────

@@ -301,6 +301,75 @@ except Exception as e:
     test("Relationships database updates", False, str(e))
 
 
+# ── Test 7: core/db.py & core/auth.py (Multi-User & Counterbalancing) ─────────
+print("\n[7] core/db.py & core/auth.py")
+
+from core.db import (
+    init_database,
+    register_user,
+    get_user_group,
+    log_session_start,
+    log_session_end,
+    log_quiz,
+    log_workload,
+    log_telemetry,
+    get_connection,
+)
+from core.auth import is_google_auth_configured
+
+try:
+    # 1. Database initialization check
+    init_database()
+    test("WAL database initialized successfully", True)
+
+    # 2. User registration check
+    register_user("tester@sentio.org", "Group B")
+    grp = get_user_group("tester@sentio.org")
+    test("User registration & group retrieval successful", grp == "Group B", f"got {grp}")
+
+    # 3. Dynamic session logging check
+    log_session_start("test_session_99", "tester@sentio.org", "Transformers", "SENTIO")
+    
+    # 4. Telemetry logging check
+    log_telemetry("test_session_99", {
+        "backspace_count": 8,
+        "avg_dwell_ms": 110.0,
+        "avg_flight_ms": 220.0,
+        "pause_seconds": 3.2
+    })
+    
+    # 5. Workload (NASA-TLX) logging check
+    log_workload("tester@sentio.org", "Transformers", "SENTIO", {
+        "mental_demand": 45,
+        "physical_demand": 5,
+        "temporal_demand": 25,
+        "performance": 85,
+        "effort": 55,
+        "frustration": 10
+    })
+    
+    # 6. Quiz score logging check
+    log_quiz("tester@sentio.org", "Transformers", "PRE", 2, 3)
+    log_quiz("tester@sentio.org", "Transformers", "POST", 3, 3)
+    log_session_end("test_session_99")
+    test("Database logs (session, telemetry, workload, quizzes) completed", True)
+
+    # Verify rows exist in DB
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT score FROM quiz_records WHERE email = 'tester@sentio.org' AND quiz_type = 'POST'")
+    quiz_val = c.fetchone()[0]
+    test("Database quiz record read verification successful", quiz_val == 3, f"got {quiz_val}")
+    conn.close()
+
+except Exception as e:
+    test("Multi-user study backend verification", False, str(e))
+
+# 7. Check auth configuration endpoint
+is_auth_set = is_google_auth_configured()
+test("OAuth configuration validator returned boolean", isinstance(is_auth_set, bool))
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 print()
 print("=" * 60)
