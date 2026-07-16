@@ -23,6 +23,7 @@ from memory.store import (
     get_forgotten_topics,
 )
 from ui.timing import inject_timing_tracker, get_typing_telemetry, update_clarification_count
+from core.topics import TOPIC_POOL
 from core.db import (
     init_database,
     register_user,
@@ -37,6 +38,11 @@ from core.db import (
     get_all_quizzes,
     get_all_workloads,
     get_all_telemetry,
+    has_user_consented,
+    log_user_consent,
+    get_or_create_user_assignment,
+    save_familiarity_ratings,
+    get_completed_sessions_for_user,
 )
 from core.auth import (
     get_google_auth_url,
@@ -1293,14 +1299,17 @@ else:
 # ── Render Tutor Interface ───────────────────────────────────────────────────
 
 with tab_tutor:
-    current_idx = st.session_state["current_topic_index"]
+    completed_sessions = get_completed_sessions_for_user(st.session_state["user_email"])
+    num_completed = len(completed_sessions)
+    step = st.session_state["quiz_step"]
     
-    if current_idx >= len(CURRICULUM_TOPICS):
+    # Check if cohort study is active and completed
+    if step != "FREE_CHAT" and num_completed >= 2:
         st.balloons()
-        st.markdown("## 🎉 Study Complete!")
+        st.markdown("## 🎉 Cohort Study Complete!")
         st.markdown(
             "Thank you for participating in this research study! "
-            "You have completed all 4 topic sessions. Please download the research data log "
+            "You have completed both study sessions. Please download the research data log "
             "below and submit it to the study administrator."
         )
         
@@ -1317,14 +1326,69 @@ with tab_tutor:
         except Exception as e:
             st.error(f"Could not load database file for download: {e}")
             
+        if st.button("💬 Exit to General Chat"):
+            st.session_state["quiz_step"] = "FREE_CHAT"
+            st.session_state["chat_history"] = []
+            st.rerun()
+            
         st.stop()
-        
-    if st.session_state.get("custom_topic_data") is not None:
-        topic = st.session_state["custom_topic_data"]
-    else:
-        topic = CURRICULUM_TOPICS[current_idx]
-    mode = get_current_mode()
-    step = st.session_state["quiz_step"]
+
+    # Determine topic and mode
+    topic = None
+    mode = "SENTIO"
+    active_topic_id = None
+    
+    if step != "FREE_CHAT":
+        # Cohort study active, resolve topic and mode
+        # 1. Enforce Consent Gate
+        if not has_user_consented(st.session_state["user_email"]):
+            st.session_state["quiz_step"] = "CONSENT"
+            step = "CONSENT"
+        # 2. Enforce Familiarity Grid
+        else:
+            conn_t = get_connection()
+            c_t = conn_t.cursor()
+            c_t.execute("SELECT COUNT(*) FROM familiarity_records WHERE email = ?", (st.session_state["user_email"],))
+            has_fam = c_t.fetchone()[0] > 0
+            conn_t.close()
+            if not has_fam:
+                st.session_state["quiz_step"] = "FAMILIARITY"
+                step = "FAMILIARITY"
+            else:
+                # Resolve topics
+                selected_topic_ids = []
+                conn_t = get_connection()
+                c_t = conn_t.cursor()
+                c_t.execute("SELECT topic_id, rating FROM familiarity_records WHERE email = ?", (st.session_state["user_email"],))
+                rows_t = c_t.fetchall()
+                conn_t.close()
+                ratings_dict = {r[0]: r[1] for r in rows_t}
+                # Deterministic sort: rating ascending, alphabetically on tie
+                sorted_ratings = sorted(ratings_dict.items(), key=lambda x: (x[1], x[0]))
+                selected_topic_ids = [item[0] for item in sorted_ratings[:2]]
+                
+                # Fetch assignment
+                mode_assignment, order_assignment = get_or_create_user_assignment(st.session_state["user_email"])
+                if order_assignment == "SWAPPED_ORDER":
+                    assigned_topics = [selected_topic_ids[1], selected_topic_ids[0]]
+                else:
+                    assigned_topics = [selected_topic_ids[0], selected_topic_ids[1]]
+                
+                active_topic_id = assigned_topics[num_completed]
+                topic_data = TOPIC_POOL[active_topic_id]
+                
+                # Adapt structure to match old curriculum format
+                topic = {
+                    "name": topic_data["title"],
+                    "description": topic_data["description"],
+                    "pre_quiz": topic_data["pre_quiz"],
+                    "post_quiz": topic_data["post_quiz"]
+                }
+                
+                if num_completed == 0:
+                    mode = "SENTIO" if mode_assignment == "SENTIO_FIRST" else "CONTROL"
+                else:
+                    mode = "CONTROL" if mode_assignment == "SENTIO_FIRST" else "SENTIO"
     
     # Exit study session button in sidebar if active
     if step != "FREE_CHAT":
@@ -1340,8 +1404,19 @@ with tab_tutor:
             st.markdown("### 💬 General-Purpose Adaptive Chat")
             st.caption("Ask me anything about any topic! I will analyze your typing speed, dwell times, and flight times to dynamically adjust my vocabulary complexity and explain key concepts step-by-step.")
         with col_btn:
-            if st.button("🧪 Launch Study Wizard", help="Start the structured 4-topic research evaluation"):
-                st.session_state["quiz_step"] = "IDLE"
+            if st.button("🧪 Join Research Cohort", help="Participate in the structured 2-session research study"):
+                if not has_user_consented(st.session_state["user_email"]):
+                    st.session_state["quiz_step"] = "CONSENT"
+                else:
+                    conn_g = get_connection()
+                    c_g = conn_g.cursor()
+                    c_g.execute("SELECT COUNT(*) FROM familiarity_records WHERE email = ?", (st.session_state["user_email"],))
+                    has_ratings = c_g.fetchone()[0] > 0
+                    conn_g.close()
+                    if not has_ratings:
+                        st.session_state["quiz_step"] = "FAMILIARITY"
+                    else:
+                        st.session_state["quiz_step"] = "IDLE"
                 st.session_state["chat_history"] = []
                 st.rerun()
                 
@@ -1405,58 +1480,61 @@ with tab_tutor:
             })
             st.rerun()
             
-    elif step == "IDLE":
-        st.markdown("## 🧪 Study Wizard: Choose Your Topic")
-        st.markdown("For research logging, you can either study one of our baseline topics or enter any custom topic of interest!")
-        
-        study_topic_choice = st.selectbox(
-            "Select study topic:",
-            ["1. Artificial Intelligence vs. Agentic AI", 
-             "2. Transformers & Self-Attention", 
-             "3. Spaced Repetition & Ebbinghaus Decay", 
-             "4. Cognitive Load Theory", 
-             "✏️ Study a Custom Topic..."]
-        )
-        
-        custom_topic_typed = ""
-        if study_topic_choice == "✏️ Study a Custom Topic...":
-            custom_topic_typed = st.text_input("Enter your custom topic name:", placeholder="e.g. Quantum Computing, React Hooks, French Revolution").strip()
+    elif step == "CONSENT":
+        st.markdown("## 📋 Informed Consent Form")
+        st.write(
+            """
+            Welcome to the research study. Before proceeding, please read and review the details below:
             
-        st.info(f"Session Mode: **{mode}** (Assigned automatically for balanced research control)")
+            - **Purpose**: We are comparing two AI tutoring configurations (Sentio Mode vs. Control Mode).
+            - **Data Collection**: We will log your typing dynamics (dwell time, flight time, backspaces), quiz scores, and subjective workload survey responses.
+            - **Privacy**: All logs are completely confidential and associated only with your hashed/sanitized user email.
+            - **Disclosure**: To keep results unbiased (single-blind), the active tutoring mode will not be disclosed to you during the study.
+            - **Voluntary Participation**: Participation is voluntary. You can stop or exit at any point.
+            """
+        )
+        st.info("By checking the box below, you acknowledge that you are at least 18 years of age and voluntarily consent to participate in this study.")
+        
+        consent_checkbox = st.checkbox("I voluntarily consent to participate in this research study.")
+        
+        if st.button("Agree and Proceed", disabled=not consent_checkbox):
+            log_user_consent(st.session_state["user_email"])
+            st.session_state["quiz_step"] = "FAMILIARITY"
+            st.rerun()
+
+    elif step == "FAMILIARITY":
+        st.markdown("## 🎚️ Topic Familiarity Grid")
+        st.write("Please rate your current level of familiarity (1 = completely unfamiliar, 5 = highly expert) with each of the following 8 topics:")
+        
+        fam_ratings = {}
+        with st.form("familiarity_form"):
+            for t_id, t_info in TOPIC_POOL.items():
+                st.markdown(f"**{t_info['title']}**")
+                st.caption(t_info["description"])
+                fam_ratings[t_id] = st.slider("Select familiarity score:", 1, 5, 3, key=f"fam_sl_{t_id}")
+                st.write("")
+                
+            submit_fam = st.form_submit_button("Submit Ratings & Launch Cohort Study")
+            if submit_fam:
+                save_familiarity_ratings(st.session_state["user_email"], fam_ratings)
+                # Assign to queue
+                get_or_create_user_assignment(st.session_state["user_email"])
+                st.session_state["quiz_step"] = "IDLE"
+                st.rerun()
+
+    elif step == "IDLE":
+        st.markdown(f"## Topic {num_completed + 1}: {topic['name']}")
+        st.markdown(topic['description'])
+        st.info("Press the button below to start your study session for this topic.")
         
         if st.button("Start Study Session", key="start_session_btn"):
-            final_topic_name = ""
-            is_custom = False
-            
-            if study_topic_choice == "✏️ Study a Custom Topic...":
-                if not custom_topic_typed:
-                    st.warning("Please type a custom topic name.")
-                    st.stop()
-                final_topic_name = custom_topic_typed
-                is_custom = True
-            else:
-                # Strip the prefix "1. ", "2. ", etc.
-                final_topic_name = study_topic_choice.split(". ", 1)[1]
-            
-            if is_custom:
-                with st.spinner("Generating custom pre/post-test questions for your topic..."):
-                    quiz_qs = generate_custom_quizzes(final_topic_name, extractor_llm)
-                st.session_state["custom_topic_data"] = {
-                    "name": final_topic_name,
-                    "description": f"An adaptive scaffolding study on {final_topic_name}.",
-                    "pre_quiz": quiz_qs,
-                    "post_quiz": quiz_qs
-                }
-            else:
-                st.session_state["custom_topic_data"] = None
-                
             st.session_state["quiz_step"] = "PRE_TEST"
             st.session_state["pre_test_answers"] = {}
-            st.session_state["current_session_id"] = f"{st.session_state['user_email']}_{current_idx}_{int(time.time())}"
+            st.session_state["current_session_id"] = f"{st.session_state['user_email']}_{active_topic_id}_{int(time.time())}"
             log_session_start(
                 st.session_state["current_session_id"],
                 st.session_state["user_email"],
-                final_topic_name,
+                topic["name"],
                 mode
             )
             st.rerun()

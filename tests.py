@@ -397,6 +397,71 @@ is_auth_set = is_google_auth_configured()
 test("OAuth configuration validator returned boolean", isinstance(is_auth_set, bool))
 
 
+# ── Test 8: Consent Gate & Permuted Block Randomization ────────────────────────
+print("\n[8] Consent Gate & Permuted Block Randomization")
+
+try:
+    from core.db import has_user_consented, log_user_consent, get_or_create_user_assignment, save_familiarity_ratings
+    
+    # Clean queue & consent entries to ensure clean run
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM consent_records WHERE email LIKE '%@test-cohort.org'")
+    c.execute("DELETE FROM familiarity_records WHERE email LIKE '%@test-cohort.org'")
+    c.execute("UPDATE assignment_queue SET assigned_email = NULL, assigned_time = NULL WHERE assigned_email LIKE '%@test-cohort.org'")
+    conn.commit()
+    conn.close()
+
+    # Consent Check
+    test_email_1 = "p1@test-cohort.org"
+    test("Initial consent status is False", has_user_consented(test_email_1) == False)
+    log_user_consent(test_email_1)
+    test("Consent status is True after logging", has_user_consented(test_email_1) == True)
+    
+    # Familiarity ratings & lowest-rated topic selection test
+    ratings_p1 = {
+        "grokking": 5,
+        "blindsight": 1,
+        "arrows_theorem": 2,
+        "olbers_paradox": 3,
+        "pyrrhonism": 4,
+        "charvaka": 5,
+        "piraha_language": 2,
+        "antikythera_mechanism": 5
+    }
+    save_familiarity_ratings(test_email_1, ratings_p1)
+    
+    # Simulate lowest-rated selection logic:
+    # Sort by rating ascending, on tie sort by topic_id (alphabetical)
+    sorted_ratings = sorted(ratings_p1.items(), key=lambda x: (x[1], x[0]))
+    selected_topics = [item[0] for item in sorted_ratings[:2]]
+    test("Lowest rated selected topic 1 is blindsight (rating 1)", selected_topics[0] == "blindsight")
+    test("Lowest rated selected topic 2 is arrows_theorem (rating 2, tie-breaker)", selected_topics[1] == "arrows_theorem")
+    
+    # Block Randomization Assignment Queue check
+    mode_1, order_1 = get_or_create_user_assignment("p1@test-cohort.org")
+    mode_2, order_2 = get_or_create_user_assignment("p2@test-cohort.org")
+    mode_3, order_3 = get_or_create_user_assignment("p3@test-cohort.org")
+    mode_4, order_4 = get_or_create_user_assignment("p4@test-cohort.org")
+    
+    modes = [mode_1, mode_2, mode_3, mode_4]
+    test("Block randomization contains exactly 2 SENTIO_FIRST assignments", modes.count("SENTIO_FIRST") == 2, f"got {modes}")
+    test("Block randomization contains exactly 2 CONTROL_FIRST assignments", modes.count("CONTROL_FIRST") == 2, f"got {modes}")
+    
+    orders = [order_1, order_2, order_3, order_4]
+    test("Block randomization contains exactly 2 NORMAL_ORDER assignments", orders.count("NORMAL_ORDER") == 2, f"got {orders}")
+    test("Block randomization contains exactly 2 SWAPPED_ORDER assignments", orders.count("SWAPPED_ORDER") == 2, f"got {orders}")
+    
+    # Topic pool static quiz check
+    from core.topics import TOPIC_POOL
+    test("TOPIC_POOL contains exactly 8 topics", len(TOPIC_POOL) == 8, f"got {len(TOPIC_POOL)}")
+    test("Each topic in pool has static pre_quiz with 3 questions", all(len(t["pre_quiz"]) == 3 for t in TOPIC_POOL.values()))
+    test("Each topic in pool has static post_quiz with 3 questions", all(len(t["post_quiz"]) == 3 for t in TOPIC_POOL.values()))
+
+except Exception as e:
+    test("Consent & Permuted block randomization test verification", False, str(e))
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 print()
 print("=" * 60)

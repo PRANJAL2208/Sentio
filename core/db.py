@@ -177,8 +177,61 @@ def init_database():
     );
     """)
 
+    # 6. Consent Records Table (User consent acknowledgment)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS consent_records (
+        email TEXT PRIMARY KEY,
+        consented INTEGER NOT NULL,
+        timestamp TIMESTAMP NOT NULL
+    );
+    """)
+
+    # 7. Familiarity Records Table (Topic familiarity ratings)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS familiarity_records (
+        email TEXT,
+        topic_id TEXT,
+        rating INTEGER NOT NULL,
+        timestamp TIMESTAMP NOT NULL,
+        PRIMARY KEY (email, topic_id)
+    );
+    """)
+
+    # 8. Assignment Queue Table (Permuted block randomization queue)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS assignment_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mode_assignment TEXT NOT NULL,
+        order_assignment TEXT NOT NULL,
+        assigned_email TEXT UNIQUE,
+        assigned_time TIMESTAMP
+    );
+    """)
+
+    populate_assignment_queue(conn)
+
     conn.commit()
     conn.close()
+
+def populate_assignment_queue(conn):
+    """
+    Populate assignment_queue with blocks of 4 containing a balanced 50-50 split.
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM assignment_queue")
+    if cursor.fetchone()[0] == 0:
+        import random
+        # Generate 25 blocks of 4 = 100 slots (more than enough for a 30-person study)
+        modes_block = ["SENTIO_FIRST", "SENTIO_FIRST", "CONTROL_FIRST", "CONTROL_FIRST"]
+        orders_block = ["NORMAL_ORDER", "NORMAL_ORDER", "SWAPPED_ORDER", "SWAPPED_ORDER"]
+        for _ in range(25):
+            random.shuffle(modes_block)
+            random.shuffle(orders_block)
+            for m, o in zip(modes_block, orders_block):
+                cursor.execute(
+                    "INSERT INTO assignment_queue (mode_assignment, order_assignment) VALUES (?, ?)",
+                    (m, o)
+                )
 
 # ── Logging Functions ────────────────────────────────────────────────────────
 
@@ -437,3 +490,131 @@ def get_all_telemetry() -> list:
         "session_id": r[0], "backspace_count": r[1], "avg_dwell_ms": r[2],
         "avg_flight_ms": r[3], "pause_seconds": r[4], "timestamp": r[5]
     } for r in rows]
+
+def has_user_consented(email: str) -> bool:
+    """
+    Check if a user has consented to the research study.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT consented FROM consent_records WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+def log_user_consent(email: str):
+    """
+    Record user consent for the research study.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        now = datetime.now()
+        cursor.execute(
+            "INSERT OR REPLACE INTO consent_records (email, consented, timestamp) VALUES (?, 1, ?)",
+            (email, now)
+        )
+        conn.commit()
+        # Log to Supabase silently
+        supabase_post("consent_records", {"email": email, "consented": 1, "timestamp": now})
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+def get_or_create_user_assignment(email: str):
+    """
+    Assign or retrieve the permuted block randomization queue slots for mode and topic order.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        # Check if already assigned
+        cursor.execute("SELECT mode_assignment, order_assignment FROM assignment_queue WHERE assigned_email = ?", (email,))
+        row = cursor.fetchone()
+        if row:
+            return row[0], row[1]
+        
+        # Assign first available slot
+        cursor.execute("SELECT id, mode_assignment, order_assignment FROM assignment_queue WHERE assigned_email IS NULL ORDER BY id ASC LIMIT 1")
+        slot = cursor.fetchone()
+        if slot:
+            slot_id, m_assign, o_assign = slot
+            now = datetime.now()
+            cursor.execute(
+                "UPDATE assignment_queue SET assigned_email = ?, assigned_time = ? WHERE id = ?",
+                (email, now, slot_id)
+            )
+            conn.commit()
+            # Log to Supabase silently
+            supabase_patch("assignment_queue", {"id": slot_id}, {"assigned_email": email, "assigned_time": now})
+            return m_assign, o_assign
+        else:
+            # Generate a new block dynamically if out of slots
+            import random
+            modes_block = ["SENTIO_FIRST", "SENTIO_FIRST", "CONTROL_FIRST", "CONTROL_FIRST"]
+            orders_block = ["NORMAL_ORDER", "NORMAL_ORDER", "SWAPPED_ORDER", "SWAPPED_ORDER"]
+            random.shuffle(modes_block)
+            random.shuffle(orders_block)
+            for m, o in zip(modes_block, orders_block):
+                cursor.execute(
+                    "INSERT INTO assignment_queue (mode_assignment, order_assignment) VALUES (?, ?)",
+                    (m, o)
+                )
+            conn.commit()
+            
+            # Re-query
+            cursor.execute("SELECT id, mode_assignment, order_assignment FROM assignment_queue WHERE assigned_email IS NULL ORDER BY id ASC LIMIT 1")
+            slot_id, m_assign, o_assign = cursor.fetchone()
+            now = datetime.now()
+            cursor.execute(
+                "UPDATE assignment_queue SET assigned_email = ?, assigned_time = ? WHERE id = ?",
+                (email, now, slot_id)
+            )
+            conn.commit()
+            return m_assign, o_assign
+    except Exception:
+        return "SENTIO_FIRST", "NORMAL_ORDER"
+    finally:
+        conn.close()
+
+def save_familiarity_ratings(email: str, ratings: dict):
+    """
+    Persist the participant's topic familiarity ratings.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        now = datetime.now()
+        for topic_id, rating in ratings.items():
+            cursor.execute(
+                "INSERT OR REPLACE INTO familiarity_records (email, topic_id, rating, timestamp) VALUES (?, ?, ?, ?)",
+                (email, topic_id, rating, now)
+            )
+            # Log to Supabase silently
+            supabase_post("familiarity_records", {"email": email, "topic_id": topic_id, "rating": rating, "timestamp": now})
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+def get_completed_sessions_for_user(email: str) -> list:
+    """
+    Return completed study session records for a user.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT session_id, topic_name, study_mode, start_time, end_time FROM sessions WHERE email = ? AND end_time IS NOT NULL ORDER BY start_time ASC", (email,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "session_id": r[0],
+            "topic_name": r[1],
+            "study_mode": r[2],
+            "start_time": r[3],
+            "end_time": r[4]
+        }
+        for r in rows
+    ]
