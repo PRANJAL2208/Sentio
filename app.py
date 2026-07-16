@@ -98,45 +98,111 @@ if not st.session_state["user_email"] and "code" in query_params:
 
 # Render Login screen if not authenticated
 if not st.session_state["user_email"]:
-    st.markdown('<div style="text-align: center; margin-top: 50px;">', unsafe_allow_html=True)
-    st.title("🧠 Sentio Control Console")
-    st.caption("Please log in using Google or your email to access the visor.")
-    st.markdown('</div>', unsafe_allow_html=True)
+    # Custom CSS style
+    st.markdown("""
+        <style>
+        .login-card {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 16px;
+            padding: 35px 30px;
+            max-width: 450px;
+            margin: 40px auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+            text-align: center;
+        }
+        .login-logo {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            color: #ffffff;
+        }
+        .login-desc {
+            font-size: 0.95rem;
+            color: #9ca3af;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+        .google-login-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #ffffff;
+            color: #374151;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            width: 100%;
+            transition: background-color 0.2s, box-shadow 0.2s;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .google-login-btn:hover {
+            background-color: #f9fafb;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .google-icon {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+        }
+        .login-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            color: #6b7280;
+            margin: 25px 0;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .login-divider::before, .login-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #374151;
+        }
+        .login-divider:not(:empty)::before {
+            margin-right: .5em;
+        }
+        .login-divider:not(:empty)::after {
+            margin-left: .5em;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
-    st.write("---")
+    # Render Login Container
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    st.markdown('<div class="login-logo">🧠 Sentio</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-desc">Cognitive-Adaptive Intelligent Tutoring Visor. Analyzing typing biometrics to customize learning flows.</div>', unsafe_allow_html=True)
     
     # 1. Google OAuth
     if is_google_auth_configured():
         auth_url = get_google_auth_url()
         google_btn_html = f"""
-        <div style="text-align: center; margin-bottom: 25px;">
-            <a href="{auth_url}" target="_self" style="text-decoration: none;">
-                <button style="
-                    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
-                    color: white !important;
-                    border: 1px solid rgba(99, 102, 241, 0.4) !important;
-                    border-radius: 8px !important;
-                    padding: 14px 28px !important;
-                    font-weight: 700 !important;
-                    font-size: 1rem !important;
-                    cursor: pointer !important;
-                    box-shadow: 0 0 15px rgba(99, 102, 241, 0.3) !important;
-                    text-transform: uppercase !important;
-                    letter-spacing: 0.05em !important;
-                ">
-                    Sign in with Google
-                </button>
-            </a>
-        </div>
+        <a href="{auth_url}" target="_self" class="google-login-btn">
+            <svg class="google-icon" viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+                <g transform="matrix(1, 0, 0, 1, 0, 0)">
+                    <path d="M21.35,11.1H12v2.7h5.38c-0.24,1.28 -0.96,2.37 -2.04,3.1v2.58h3.3c1.93,-1.78 3.04,-4.4 3.04,-7.48c0,-0.61 -0.06,-1.2 -0.16,-1.72Z" fill="#4285F4"/>
+                    <path d="M12,20.58c2.43,0 4.47,-0.81 5.96,-2.2l-3.3,-2.58c-0.91,0.61 -2.08,0.98 -3.3,0.98c-2.34,0 -4.33,-1.58 -5.04,-3.7L2.9,15.18v2.66c1.48,2.94 4.52,4.74 8.1,4.74Z" fill="#34A853"/>
+                    <path d="M6.96,13.08c-0.18,-0.54 -0.28,-1.11 -0.28,-1.7c0,-0.59 0.1,-1.16 0.28,-1.7V7.02H2.9C2.29,8.24 1.94,9.63 1.94,11.1c0,1.47 0.35,2.86 0.96,4.08l4.06,-3.1Z" fill="#FBBC05"/>
+                    <path d="M12,4.82c1.32,0 2.51,0.45 3.44,1.35l2.58,-2.58c-1.55,-1.44 -3.59,-2.31 -6.02,-2.31c-3.58,0 -6.62,1.8 -8.1,4.74l4.06,3.1c0.71,-2.12 2.7,-3.7 5.04,-3.7Z" fill="#EA4335"/>
+                </g>
+            </svg>
+            Sign in with Google
+        </a>
         """
         st.markdown(google_btn_html, unsafe_allow_html=True)
-        st.write("OR")
+        st.markdown('<div class="login-divider">Or continue with email</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="login-divider">Developer Login</div>', unsafe_allow_html=True)
         
-    # 2. Email Fallback Form
-    with st.form("email_login_form"):
-        st.markdown("### 📧 Developer Email Login")
-        email_input = st.text_input("Enter Email ID", placeholder="your.name@example.com").strip()
-        submit_login = st.form_submit_button("Launch Console")
+    # 2. Email Fallback
+    with st.container():
+        email_input = st.text_input("Email Address", placeholder="e.g. pranjal@domain.com", label_visibility="collapsed").strip()
+        submit_login = st.button("Launch Console", use_container_width=True, type="primary")
         if submit_login:
             if not email_input or "@" not in email_input:
                 st.warning("Please enter a valid email address.")
@@ -148,6 +214,7 @@ if not st.session_state["user_email"]:
                 register_user(email, group)
                 st.rerun()
                 
+    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 
