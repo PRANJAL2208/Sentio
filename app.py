@@ -98,31 +98,83 @@ if not st.session_state["user_email"] and "code" in query_params:
 
 # Render Login screen if not authenticated
 if not st.session_state["user_email"]:
-    # Custom CSS style
+    # Custom CSS styles that apply ONLY on the login screen
     st.markdown("""
         <style>
-        .login-card {
-            background: #111827;
-            border: 1px solid #374151;
-            border-radius: 16px;
-            padding: 35px 30px;
-            max-width: 450px;
-            margin: 40px auto;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
-            text-align: center;
+        /* Center container and constrain width on login */
+        [data-testid="stAppViewBlockContainer"] {
+            max-width: 480px !important;
+            padding-top: 8rem !important;
+            padding-bottom: 5rem !important;
+            margin: 0 auto !important;
         }
+        
+        /* Centering utility for elements */
+        .stVerticalBlock {
+            align-items: center !important;
+            text-align: center !important;
+            gap: 1.5rem !important;
+        }
+        
         .login-logo {
-            font-size: 2.5rem;
+            font-size: 3rem;
             font-weight: 800;
-            margin-bottom: 10px;
-            color: #ffffff;
+            background: linear-gradient(135deg, #a78bfa, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0px;
+            letter-spacing: -0.03em;
         }
+        
         .login-desc {
             font-size: 0.95rem;
             color: #9ca3af;
-            margin-bottom: 30px;
-            line-height: 1.5;
+            line-height: 1.6;
+            margin-bottom: 10px;
         }
+        
+        /* Customize the email text input to look premium */
+        div[data-testid="stTextInput"] {
+            width: 100% !important;
+        }
+        div[data-testid="stTextInput"] input {
+            background-color: #1f2937 !important;
+            color: #f3f4f6 !important;
+            border: 1px solid #4b5563 !important;
+            border-radius: 12px !important;
+            padding: 14px 18px !important;
+            font-size: 1rem !important;
+            text-align: center !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        div[data-testid="stTextInput"] input:focus {
+            border-color: #8b5cf6 !important;
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25) !important;
+        }
+        
+        /* Customize the primary launch button */
+        div[data-testid="stButton"] button {
+            background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            padding: 14px 28px !important;
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+            width: 100% !important;
+            box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3) !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        div[data-testid="stButton"] button:hover {
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
+            transform: translateY(-1px) !important;
+            color: white !important;
+            border: none !important;
+        }
+        div[data-testid="stButton"] button:active {
+            transform: translateY(1px) !important;
+        }
+        
         .google-login-btn {
             display: inline-flex;
             align-items: center;
@@ -130,31 +182,32 @@ if not st.session_state["user_email"]:
             background-color: #ffffff;
             color: #374151;
             border: 1px solid #d1d5db;
-            border-radius: 8px;
-            padding: 12px 24px;
-            font-size: 0.95rem;
+            border-radius: 12px;
+            padding: 14px 24px;
+            font-size: 1rem;
             font-weight: 600;
             text-decoration: none;
             width: 100%;
-            transition: background-color 0.2s, box-shadow 0.2s;
-            margin-bottom: 20px;
+            transition: all 0.2s ease-in-out;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         .google-login-btn:hover {
             background-color: #f9fafb;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            color: #111827;
         }
         .google-icon {
             width: 18px;
             height: 18px;
-            margin-right: 10px;
+            margin-right: 12px;
         }
         .login-divider {
             display: flex;
             align-items: center;
             text-align: center;
             color: #6b7280;
-            margin: 25px 0;
+            width: 100%;
+            margin: 10px 0;
             font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -165,20 +218,19 @@ if not st.session_state["user_email"]:
             border-bottom: 1px solid #374151;
         }
         .login-divider:not(:empty)::before {
-            margin-right: .5em;
+            margin-right: .8em;
         }
         .login-divider:not(:empty)::after {
-            margin-left: .5em;
+            margin-left: .8em;
         }
         </style>
     """, unsafe_allow_html=True)
     
-    # Render Login Container
-    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    # Render Logo & Description
     st.markdown('<div class="login-logo">🧠 Sentio</div>', unsafe_allow_html=True)
-    st.markdown('<div class="login-desc">Cognitive-Adaptive Intelligent Tutoring Visor. Analyzing typing biometrics to customize learning flows.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-desc">Cognitive-adaptive intelligent tutoring console. Logging typing biometrics to dynamically customize explanation complexity.</div>', unsafe_allow_html=True)
     
-    # 1. Google OAuth
+    # 1. Google OAuth Button
     if is_google_auth_configured():
         auth_url = get_google_auth_url()
         google_btn_html = f"""
@@ -197,24 +249,23 @@ if not st.session_state["user_email"]:
         st.markdown(google_btn_html, unsafe_allow_html=True)
         st.markdown('<div class="login-divider">Or continue with email</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="login-divider">Developer Login</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-divider">Developer Access</div>', unsafe_allow_html=True)
         
-    # 2. Email Fallback
-    with st.container():
-        email_input = st.text_input("Email Address", placeholder="e.g. pranjal@domain.com", label_visibility="collapsed").strip()
-        submit_login = st.button("Launch Console", use_container_width=True, type="primary")
-        if submit_login:
-            if not email_input or "@" not in email_input:
-                st.warning("Please enter a valid email address.")
-            else:
-                email = email_input.lower().strip()
-                st.session_state["user_email"] = email
-                group = "Group A" if hash(email) % 2 != 0 else "Group B"
-                st.session_state["group_assignment"] = group
-                register_user(email, group)
-                st.rerun()
-                
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 2. Email Fallback form controls
+    email_input = st.text_input("Email Address", placeholder="Enter your email address", label_visibility="collapsed").strip()
+    submit_login = st.button("Launch Console", use_container_width=True)
+    
+    if submit_login:
+        if not email_input or "@" not in email_input:
+            st.warning("Please enter a valid email address.")
+        else:
+            email = email_input.lower().strip()
+            st.session_state["user_email"] = email
+            group = "Group A" if hash(email) % 2 != 0 else "Group B"
+            st.session_state["group_assignment"] = group
+            register_user(email, group)
+            st.rerun()
+            
     st.stop()
 
 
