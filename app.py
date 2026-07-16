@@ -276,7 +276,41 @@ st.sidebar.markdown(f"**Group:** `{st.session_state['group_assignment']}`")
 st.markdown("<h2 style='text-align: center; margin-top: -40px; margin-bottom: 20px; font-weight: 800; color: #5B21B6;'>🧠 Sentio</h2>", unsafe_allow_html=True)
 
 
-# ── Init session state ────────────────────────────────────────────────────────
+# ── Init session state & Quiz Generation ──────────────────────────────────────
+
+def generate_custom_quizzes(topic_name: str, _llm) -> list:
+    """Generates 3 multiple choice questions for a custom topic to act as pre/post tests."""
+    import json
+    prompt = f"""
+You are an expert curriculum designer. Generate exactly 3 multiple-choice questions to evaluate a learner's understanding of the topic: "{topic_name}".
+
+Return ONLY a JSON array of 3 objects matching this exact format:
+[
+  {{
+    "q": "Question text here?",
+    "options": ["Option A", "Option B", "Option C"],
+    "a": 0
+  }},
+  ...
+]
+Where "a" is the 0-indexed integer of the correct option (0, 1, or 2). Do not include markdown code fences, only return raw JSON.
+"""
+    try:
+        from langchain_core.messages import SystemMessage
+        res = _llm.invoke([SystemMessage(content=prompt)])
+        content = res.content.strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+        questions = json.loads(content.strip())
+        return questions
+    except Exception as e:
+        return [
+            {"q": f"Which of the following is a key element of {topic_name}?", "options": ["Core concept explanation.", "An unrelated concept.", "A secondary detail."], "a": 0},
+            {"q": f"Why is {topic_name} important in modern technology?", "options": ["It reduces operational costs.", "It represents a core technical advancement.", "It is a standard naming protocol."], "a": 1},
+            {"q": f"What is a common challenge when implementing {topic_name}?", "options": ["High latency overheads.", "Complexity in configuration and scalability.", "A lack of community support."], "a": 1}
+        ]
 
 def init_session():
     defaults = {
@@ -295,6 +329,7 @@ def init_session():
         "pre_test_answers":      {},
         "post_test_answers":     {},
         "study_start_time":      None,
+        "custom_topic_data":     None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -1279,7 +1314,10 @@ with tab_tutor:
             
         st.stop()
         
-    topic = CURRICULUM_TOPICS[current_idx]
+    if st.session_state.get("custom_topic_data") is not None:
+        topic = st.session_state["custom_topic_data"]
+    else:
+        topic = CURRICULUM_TOPICS[current_idx]
     mode = get_current_mode()
     step = st.session_state["quiz_step"]
     
@@ -1363,18 +1401,57 @@ with tab_tutor:
             st.rerun()
             
     elif step == "IDLE":
-        st.markdown(f"## Topic {current_idx + 1}: {topic['name']}")
-        st.markdown(topic['description'])
+        st.markdown("## 🧪 Study Wizard: Choose Your Topic")
+        st.markdown("For research logging, you can either study one of our baseline topics or enter any custom topic of interest!")
+        
+        study_topic_choice = st.selectbox(
+            "Select study topic:",
+            ["1. Artificial Intelligence vs. Agentic AI", 
+             "2. Transformers & Self-Attention", 
+             "3. Spaced Repetition & Ebbinghaus Decay", 
+             "4. Cognitive Load Theory", 
+             "✏️ Study a Custom Topic..."]
+        )
+        
+        custom_topic_typed = ""
+        if study_topic_choice == "✏️ Study a Custom Topic...":
+            custom_topic_typed = st.text_input("Enter your custom topic name:", placeholder="e.g. Quantum Computing, React Hooks, French Revolution").strip()
+            
         st.info(f"Session Mode: **{mode}** (Assigned automatically for balanced research control)")
         
         if st.button("Start Study Session", key="start_session_btn"):
+            final_topic_name = ""
+            is_custom = False
+            
+            if study_topic_choice == "✏️ Study a Custom Topic...":
+                if not custom_topic_typed:
+                    st.warning("Please type a custom topic name.")
+                    st.stop()
+                final_topic_name = custom_topic_typed
+                is_custom = True
+            else:
+                # Strip the prefix "1. ", "2. ", etc.
+                final_topic_name = study_topic_choice.split(". ", 1)[1]
+            
+            if is_custom:
+                with st.spinner("Generating custom pre/post-test questions for your topic..."):
+                    quiz_qs = generate_custom_quizzes(final_topic_name, extractor_llm)
+                st.session_state["custom_topic_data"] = {
+                    "name": final_topic_name,
+                    "description": f"An adaptive scaffolding study on {final_topic_name}.",
+                    "pre_quiz": quiz_qs,
+                    "post_quiz": quiz_qs
+                }
+            else:
+                st.session_state["custom_topic_data"] = None
+                
             st.session_state["quiz_step"] = "PRE_TEST"
             st.session_state["pre_test_answers"] = {}
             st.session_state["current_session_id"] = f"{st.session_state['user_email']}_{current_idx}_{int(time.time())}"
             log_session_start(
                 st.session_state["current_session_id"],
                 st.session_state["user_email"],
-                topic["name"],
+                final_topic_name,
                 mode
             )
             st.rerun()
