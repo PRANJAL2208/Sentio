@@ -78,7 +78,7 @@ if "user_email" not in st.session_state:
 if "group_assignment" not in st.session_state:
     st.session_state["group_assignment"] = None
 if "study_mode" not in st.session_state:
-    st.session_state["study_mode"] = "Study Router (Balanced)"
+    st.session_state["study_mode"] = "Sentio Mode (Force Adaptive)"
 
 # Check if code is in query params (Google redirect callback)
 query_params = st.query_params
@@ -269,9 +269,15 @@ if not st.session_state["user_email"]:
     st.stop()
 
 
-# Move researcher metadata to sidebar
-st.sidebar.markdown(f"**User:** `{st.session_state['user_email']}`")
-st.sidebar.markdown(f"**Group:** `{st.session_state['group_assignment']}`")
+admin_emails = ["admin@sentio.org", "tester@sentio.org", "pranjal2208@gmail.com"]
+is_admin = st.session_state.get("user_email") in admin_emails or st.query_params.get("admin", "false") == "true"
+
+# Move researcher metadata to sidebar ONLY if admin
+if is_admin:
+    st.sidebar.markdown(f"**User:** `{st.session_state['user_email']}`")
+    st.sidebar.markdown(f"**Group:** `{st.session_state['group_assignment']}`")
+else:
+    st.sidebar.markdown(f"**Account:** `{st.session_state['user_email']}`")
 
 st.markdown("<h2 style='text-align: center; margin-top: -40px; margin-bottom: 20px; font-weight: 800; color: #5B21B6;'>🧠 Sentio</h2>", unsafe_allow_html=True)
 
@@ -1147,100 +1153,96 @@ def get_extractor_llm(provider: str, model_name: str, api_key: str):
         raise ValueError(f"Unknown provider: {provider}")
 
 
+# Default LLM configuration
+provider = "Groq"
+model_name = "llama-3.3-70b-versatile"
+resolved_api_key = os.getenv("GROQ_API_KEY") or os.getenv("DEFAULT_GROQ_API_KEY") or st.secrets.get("DEFAULT_GROQ_API_KEY", "")
+show_load_badge = False
+
 # ── Sidebar: LLM Configuration & Monitor ─────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("### 🛠️ Study Controller")
-    st.session_state["study_mode"] = st.selectbox(
-        "Study Mode Selector",
-        ["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"],
-        index=["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"].index(st.session_state.get("study_mode", "Study Router (Balanced)"))
-    )
-    
-    st.divider()
-    st.markdown("### ⚙️ LLM Settings")
-    provider = st.selectbox(
-        "Provider",
-        ["Gemini (Google)", "OpenAI", "Anthropic", "Groq"],
-        index=0,
-    )
-    
-    default_models = {
-        "Gemini (Google)": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
-        "OpenAI": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-        "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-haiku-20240307"],
-        "Groq": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
-    }
-    
-    model_name = st.selectbox(
-        "Model",
-        default_models[provider],
-        index=0,
-    )
-    
-    custom_model = st.text_input("Custom model name (optional)")
-    if custom_model.strip():
-        model_name = custom_model.strip()
+    if is_admin:
+        st.markdown("### 🛠️ Study Controller")
+        st.session_state["study_mode"] = st.selectbox(
+            "Study Mode Selector",
+            ["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"],
+            index=["Study Router (Balanced)", "Sentio Mode (Force Adaptive)", "Control Mode (Force Vanilla)"].index(st.session_state.get("study_mode", "Sentio Mode (Force Adaptive)"))
+        )
         
-    api_key_input = st.text_input(
-        "API Key (Leave blank for fallback)",
-        type="password",
-    )
-
-    resolved_api_key = api_key_input.strip()
-    if not resolved_api_key:
-        env_keys = {
-            "Gemini (Google)": "GEMINI_API_KEY",
-            "OpenAI": "OPENAI_API_KEY",
-            "Anthropic": "ANTHROPIC_API_KEY",
-            "Groq": "GROQ_API_KEY",
-        }
-        resolved_api_key = os.getenv(env_keys[provider], "")
+        st.divider()
+        st.markdown("### ⚙️ LLM Settings")
+        provider = st.selectbox(
+            "Provider",
+            ["Gemini (Google)", "OpenAI", "Anthropic", "Groq"],
+            index=3,
+        )
         
-    if not resolved_api_key:
-        default_groq_key = ""
-        try:
-            default_groq_key = st.secrets.get("DEFAULT_GROQ_API_KEY", "")
-        except Exception:
-            pass
-        default_groq_key = os.getenv("DEFAULT_GROQ_API_KEY") or os.getenv("GROQ_API_KEY") or default_groq_key
-        if default_groq_key:
-            provider = "Groq"
-            model_name = "llama-3.3-70b-versatile"
-            resolved_api_key = default_groq_key
-            st.sidebar.info("🤖 Using system Groq fallback.")
-
-    st.divider()
-
-    st.markdown("### 🔬 Cognitive Load Monitor")
-    st.caption("What the system detected for your last message.")
-
-    if st.session_state["load_state_history"]:
-        last = st.session_state["load_state_history"][-1]
-
-        state_colors = {
-            "OVERLOADED":   "🔴",
-            "OPTIMAL":      "🟢",
-            "UNDERLOADED":  "🔵",
+        default_models = {
+            "Gemini (Google)": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+            "OpenAI": ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
+            "Anthropic": ["claude-3-5-sonnet-latest", "claude-3-haiku-20240307"],
+            "Groq": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
         }
-        emoji = state_colors.get(last["state"], "⚪")
-        st.markdown(f"**State:** {emoji} {last['state']}")
-        st.markdown(f"**Confidence:** {last['confidence']:.0%}")
+        
+        model_name = st.selectbox(
+            "Model",
+            default_models[provider],
+            index=0,
+        )
+        
+        custom_model = st.text_input("Custom model name (optional)")
+        if custom_model.strip():
+            model_name = custom_model.strip()
+            
+        api_key_input = st.text_input(
+            "API Key (Leave blank for fallback)",
+            type="password",
+        )
 
-        with st.expander("Raw signals"):
-            signals = last["signals"]
-            st.markdown(f"- Pause: `{signals['pause_seconds']:.1f}s`")
-            st.markdown(f"- Message length: `{signals['message_length']} chars`")
-            st.markdown(f"- Clarification: `{signals['is_clarification']}`")
-            st.markdown(f"- Recent clarifications: `{signals['recent_clarification_count']}`")
-            if signals.get("avg_flight_ms", 0.0) > 0:
-                st.markdown(f"- Avg Flight: `{signals['avg_flight_ms']:.0f}ms`")
-            if signals.get("avg_dwell_ms", 0.0) > 0:
-                st.markdown(f"- Avg Dwell: `{signals['avg_dwell_ms']:.0f}ms`")
-            if signals.get("backspace_count", 0) > 0:
-                st.markdown(f"- Backspaces: `{signals['backspace_count']}`")
+        if api_key_input.strip():
+            resolved_api_key = api_key_input.strip()
+        else:
+            env_keys = {
+                "Gemini (Google)": "GEMINI_API_KEY",
+                "OpenAI": "OPENAI_API_KEY",
+                "Anthropic": "ANTHROPIC_API_KEY",
+                "Groq": "GROQ_API_KEY",
+            }
+            resolved_api_key = os.getenv(env_keys[provider], resolved_api_key)
+            
+        st.divider()
+        
+        st.markdown("### 🔬 Cognitive Load Monitor")
+        st.caption("What the system detected for your last message.")
 
-    st.divider()
+        if st.session_state["load_state_history"]:
+            last = st.session_state["load_state_history"][-1]
+
+            state_colors = {
+                "OVERLOADED":   "🔴",
+                "OPTIMAL":      "🟢",
+                "UNDERLOADED":  "🔵",
+            }
+            emoji = state_colors.get(last["state"], "⚪")
+            st.markdown(f"**State:** {emoji} {last['state']}")
+            st.markdown(f"**Confidence:** {last['confidence']:.0%}")
+
+            with st.expander("Raw signals"):
+                signals = last["signals"]
+                st.markdown(f"- Pause: `{signals['pause_seconds']:.1f}s`")
+                st.markdown(f"- Message length: `{signals['message_length']} chars`")
+                st.markdown(f"- Clarification: `{signals['is_clarification']}`")
+                st.markdown(f"- Recent clarifications: `{signals['recent_clarification_count']}`")
+                if signals.get("avg_flight_ms", 0.0) > 0:
+                    st.markdown(f"- Avg Flight: `{signals['avg_flight_ms']:.0f}ms`")
+                if signals.get("avg_dwell_ms", 0.0) > 0:
+                    st.markdown(f"- Avg Dwell: `{signals['avg_dwell_ms']:.0f}ms`")
+                if signals.get("backspace_count", 0) > 0:
+                    st.markdown(f"- Backspaces: `{signals['backspace_count']}`")
+
+        st.divider()
+        
     st.markdown("### 🗃️ Memory")
     st.caption("Topics the system thinks you might have forgotten.")
 
@@ -1254,7 +1256,10 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### ⚙️ Session Settings")
-    show_load_badge = st.toggle("Show load state in chat", value=True)
+    if is_admin:
+        show_load_badge = st.toggle("Show load state in chat", value=True)
+    else:
+        show_load_badge = False
 
     if st.button("Clear session memory"):
         st.session_state["chat_history"] = []
